@@ -1,0 +1,15 @@
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
+  "include": ["*.ts", "src/**/*"],
+  "compilerOptions": {
+    "composite": true,
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    // "node" 追加: cluster-sidebar雛形は"electron"importが無くnode型が入らないため、
+    // 雛形のまま追加しないとrendererからのnode:*直接importが型解決できない(先行PoC検証を踏襲)。
+    "types": ["vite/client", "electron-vite/node", "node"],
+    "paths": {
+      "@vitejs/plugin-react": ["./node_modules/@vitejs/plugin-react/dist/index.d.ts"]
+    }
+  }
+}

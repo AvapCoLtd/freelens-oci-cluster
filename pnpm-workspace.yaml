@@ -1,0 +1,11 @@
+# pnpm 11 replaced onlyBuiltDependencies (array) with allowBuilds (map);
+# these are the same trusted native-build packages the upstream template
+# allowed, migrated to the new syntax for the locally installed pnpm 11.
+allowBuilds:
+  '@parcel/watcher': true
+  electron: true
+  esbuild: true
+  node-pty: true
+  playwright: true
+
+shellEmulator: true

@@ -1,0 +1,45 @@
+{
+  "name": "freelens-oci-cluster",
+  "version": "0.1.0",
+  "description": "FreeLens extension that shows the OCI resources backing the open cluster (nodes, load balancers, storage)",
+  "main": "out/main/index.js",
+  "renderer": "out/renderer/index.js",
+  "files": [
+    "out/**/*"
+  ],
+  "engines": {
+    "node": ">= 22.0.0",
+    "freelens": "^1.8.0"
+  },
+  "license": "MIT",
+  "scripts": {
+    "type:check": "tsc --noEmit -p tsconfig.json --composite false",
+    "prebuild": "pnpm type:check",
+    "build": "electron-vite build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-decorators": "^8.0.2",
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@freelensapp/extensions": "^1.10.2",
+    "@types/node": "~24.12.4",
+    "@types/react": "^17.0.93",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "41.10.0",
+    "electron-vite": "^5.0.0",
+    "mobx": "6.13.7",
+    "mobx-react": "7.6.0",
+    "react": "17.0.2",
+    "react-dom": "17.0.2",
+    "typescript": "5.9.3",
+    "vite": "^8.1.2",
+    "vitest": "^3.2.4"
+  },
+  "keywords": [
+    "extension",
+    "freelensapp",
+    "lens",
+    "openlens",
+    "freelens"
+  ]
+}
