@@ -58,12 +58,12 @@ export interface GatewayHealth {
 /** ゲートウェイの生死判定。「経路表は正しいのに通らない」の原因(無効化/遮断/未接続)を表に出す。 */
 export function gatewayHealth(view: OciGatewayStatusView): GatewayHealth {
   const problems: string[] = [];
-  if (view.isEnabled === false) problems.push("無効");
-  if (view.blockTraffic === true) problems.push("遮断中");
+  if (view.isEnabled === false) problems.push("Disabled");
+  if (view.blockTraffic === true) problems.push("Blocking");
   if (view.peeringStatus && view.peeringStatus !== "PEERED") problems.push(`peering: ${view.peeringStatus}`);
   if (view.lifecycleState && view.lifecycleState !== "AVAILABLE" && view.lifecycleState !== "ATTACHED") {
     problems.push(view.lifecycleState);
   }
   if (problems.length > 0) return { label: problems.join(" / "), healthy: false };
-  return { label: "正常", healthy: true };
+  return { label: "Healthy", healthy: true };
 }

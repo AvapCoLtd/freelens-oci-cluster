@@ -53,5 +53,5 @@ export function matchDnsToLbs(
   if (resolvedIps.length === 0) return { kind: "unresolved", matchedLbNames: [] };
   const matched = lbs.filter((lb) => lb.ips.some((ip) => resolvedIps.includes(ip)));
   if (matched.length === 0) return { kind: "unmatched", matchedLbNames: [] };
-  return { kind: "matched", matchedLbNames: matched.map((lb) => lb.displayName ?? "(名称不明)") };
+  return { kind: "matched", matchedLbNames: matched.map((lb) => lb.displayName ?? "(name unknown)") };
 }

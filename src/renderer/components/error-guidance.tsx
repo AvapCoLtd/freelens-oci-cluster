@@ -12,43 +12,43 @@ export function describeOciError(kind: OciErrorKind): OciErrorGuidance {
   switch (kind) {
     case "auth_missing":
       return {
-        title: "OCI 認証情報が見つかりません",
+        title: "OCI credentials not found",
         body:
-          "~/.oci/config が存在せず、認証情報コマンドも未設定です。" +
-          "FreeLens の Preferences 内「OCI」で認証情報コマンドを設定するか、~/.oci/config を用意してください。" +
-          "詳しくはプラグイン README の「前提条件」「設定」を参照してください。",
+          "~/.oci/config does not exist and no credentials command is configured. " +
+          "Set a credentials command under Preferences → OCI, or provide ~/.oci/config. " +
+          "See the plugin README's Prerequisites and Configuration sections for details.",
       };
     case "auth_command":
       return {
-        title: "認証情報コマンドの実行に失敗しました",
+        title: "Credentials command execution failed",
         body:
-          "Preferences 内「OCI」の認証情報コマンドと、その出力(JSON契約)を確認してください。" +
-          "漏洩防止のため、コマンドの標準出力はここには表示されません。",
+          "Check the credentials command under Preferences → OCI and its output (JSON contract). " +
+          "The command's stdout is not shown here to avoid leaking credentials.",
       };
     case "not_authenticated":
       return {
-        title: "OCI 認証が切れています",
-        body: "ターミナルで `oci session authenticate` 等で再認証したのち、［更新］をクリックしてください。",
+        title: "OCI authentication expired",
+        body: "Re-authenticate in a terminal (e.g. `oci session authenticate`), then click Refresh.",
       };
     case "forbidden_or_not_found":
       return {
-        title: "OCI API の呼び出しに失敗しました",
-        body: "権限不足またはリソースが見つかりません(404/403)。下の詳細を確認してください。",
+        title: "OCI API call failed",
+        body: "Insufficient permissions or resource not found (404/403). Check the details below.",
       };
     case "internal":
       return {
-        title: "予期しないエラーが発生しました",
-        body: "プラグインのバグの可能性があります。下の詳細を確認のうえ報告してください。",
+        title: "An unexpected error occurred",
+        body: "This may be a plugin bug. Check the details below and report it.",
       };
     case "not_requested":
       return {
-        title: "このページでは取得対象外です",
-        body: "このセクションは現在のページでは取得していません。",
+        title: "Not fetched on this page",
+        body: "This section is not fetched on the current page.",
       };
     default:
       return {
-        title: "OCI API の呼び出しに失敗しました",
-        body: "下の詳細を確認してください。",
+        title: "OCI API call failed",
+        body: "Check the details below.",
       };
   }
 }
@@ -64,7 +64,7 @@ const RAW_ERROR_STYLE: React.CSSProperties = {
 export function RawErrorDetails({ raw }: { raw: OciRawErrorInfo }) {
   return (
     <details style={RAW_ERROR_STYLE}>
-      <summary>生エラーを表示</summary>
+      <summary>Show raw error</summary>
       <div>message: {raw.message}</div>
       {raw.statusCode !== undefined && <div>status: {raw.statusCode}</div>}
       {raw.serviceCode && <div>serviceCode: {raw.serviceCode}</div>}
@@ -99,10 +99,10 @@ export function SectionError({ kind, raw }: { kind: OciErrorKind; raw: OciRawErr
 export function NonOkeGuidance() {
   return (
     <div style={NOTICE_BOX_STYLE}>
-      <strong>このクラスタは OCI 連携対象外です</strong>
+      <strong>This cluster is not linked to OCI</strong>
       <div>
-        K8s Node の providerID が OCI Instance OCID 形式ではないため、OCI 側クラスタを自動特定できませんでした。
-        OKE(Oracle Container Engine for Kubernetes)クラスタでのみ本ページのデータが表示されます。
+        The K8s Node's providerID is not in OCI Instance OCID format, so the OCI-side cluster could not be identified
+        automatically. This page only shows data for OKE (Oracle Container Engine for Kubernetes) clusters.
       </div>
     </div>
   );
@@ -121,10 +121,10 @@ export function FatalErrorGuidance({ errorKind, raw, stage, onRetry }: FatalErro
     <div style={NOTICE_BOX_STYLE}>
       <strong>{guidance.title}</strong>
       <div>{guidance.body}</div>
-      <div style={{ fontSize: 12, color: "var(--textColorSecondary, #9aa0a6)" }}>失敗段階: {stage}</div>
+      <div style={{ fontSize: 12, color: "var(--textColorSecondary, #9aa0a6)" }}>Failed stage: {stage}</div>
       <RawErrorDetails raw={raw} />
       <div style={{ marginTop: 8 }}>
-        <Button primary small onClick={onRetry} label="再試行" />
+        <Button primary small onClick={onRetry} label="Retry" />
       </div>
     </div>
   );

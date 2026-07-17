@@ -12,15 +12,15 @@ export function NodePoolSummary({ nodePools }: { nodePools: OciResult<OciNodePoo
     return <SectionError kind={nodePools.kind} raw={nodePools.raw} />;
   }
   if (nodePools.data.length === 0) {
-    return <EmptyState message="ノードプールがありません" />;
+    return <EmptyState message="No node pools" />;
   }
   return (
     <table style={{ ...TABLE_STYLE, marginBottom: 16 }}>
       <thead>
         <tr>
-          <th style={TH_STYLE}>ノードプール</th>
+          <th style={TH_STYLE}>Node Pool</th>
           <th style={TH_STYLE}>Shape</th>
-          <th style={TH_STYLE}>K8sバージョン</th>
+          <th style={TH_STYLE}>K8s Version</th>
           <th style={TH_STYLE}>size</th>
           <th style={TH_STYLE}>lifecycle-state</th>
         </tr>

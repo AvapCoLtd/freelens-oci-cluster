@@ -6,7 +6,7 @@ import { sortRows } from "../match/sort-rows";
 import type { ClusterOciData } from "../sdk/fetch";
 import type { OciInstance } from "../sdk/types";
 import { ConsoleButton } from "./console-button";
-import { EmptyState } from "./empty-state";
+import { EmptyState, LOADING_LABEL } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { NodePoolSummary } from "./node-pool-summary";
 import { OcidCopyButton } from "./ocid-copy-button";
@@ -57,11 +57,11 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
   const [sort, toggleSort] = useColumnSort<NodeColumn>("node");
 
   if (!nodeStore.isLoaded) {
-    return <EmptyState message="読み込み中..." />;
+    return <EmptyState message={LOADING_LABEL} />;
   }
   const nodes = nodeStore.items;
   if (nodes.length === 0) {
-    return <EmptyState message="K8s Node がありません" />;
+    return <EmptyState message="No K8s Nodes" />;
   }
 
   const rows: NodeRow[] = nodes.map((node) => {
@@ -91,7 +91,7 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
               Instance
             </SortableHeaderCell>
             <SortableHeaderCell column="pool" sort={sort} onSort={toggleSort}>
-              プール
+              Pool
             </SortableHeaderCell>
             <SortableHeaderCell column="shape" sort={sort} onSort={toggleSort}>
               Shape

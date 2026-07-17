@@ -5,7 +5,7 @@ import { matchServicesToLoadBalancers } from "../match/service-lb";
 import { sortRows } from "../match/sort-rows";
 import type { ClusterOciData } from "../sdk/fetch";
 import { ConsoleButton } from "./console-button";
-import { EmptyState } from "./empty-state";
+import { EmptyState, LOADING_LABEL } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { SortableHeaderCell } from "./sortable-header-cell";
@@ -106,11 +106,11 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
   const [sort, toggleSort] = useColumnSort<ServiceLbColumn>("service");
 
   if (!serviceStore.isLoaded) {
-    return <EmptyState message="読み込み中..." />;
+    return <EmptyState message={LOADING_LABEL} />;
   }
   const serviceInputs = buildServiceInputs(serviceStore.items);
   if (serviceInputs.length === 0) {
-    return <EmptyState message="type=LoadBalancer の Service がありません" />;
+    return <EmptyState message="No Service with type=LoadBalancer" />;
   }
 
   const matches = matchServicesToLoadBalancers(serviceInputs, buildCandidates(data));
@@ -156,10 +156,10 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
               Service
             </SortableHeaderCell>
             <SortableHeaderCell column="lbName" sort={sort} onSort={toggleSort}>
-              LB名
+              LB Name
             </SortableHeaderCell>
             <SortableHeaderCell column="kind" sort={sort} onSort={toggleSort}>
-              種別
+              Kind
             </SortableHeaderCell>
             <SortableHeaderCell column="ip" sort={sort} onSort={toggleSort}>
               IP
@@ -184,7 +184,7 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
                 <tr key={row.key} style={UNMATCHED_ROW_STYLE}>
                   <td style={TD_STYLE}>{row.serviceLabel}</td>
                   <td style={TD_STYLE} colSpan={7}>
-                    未対応(対応する LB が見つかりません)
+                    Unsupported (no matching LB found)
                   </td>
                 </tr>
               );

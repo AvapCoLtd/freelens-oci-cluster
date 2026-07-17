@@ -19,7 +19,7 @@ export function OcidCopyButton({ ocid }: { ocid: string }) {
   return (
     <Icon
       material={copied ? "done" : "content_copy"}
-      tooltip={copied ? "コピーしました" : "OCIDをコピー"}
+      tooltip={copied ? "Copied" : "Copy OCID"}
       interactive
       small
       onClick={handleClick}

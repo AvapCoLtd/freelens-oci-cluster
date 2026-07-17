@@ -1,6 +1,7 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type * as React from "react";
+import { LOADING_LABEL } from "../components/empty-state";
 import { FatalErrorGuidance, NonOkeGuidance } from "../components/error-guidance";
 import { OciHeader } from "../components/oci-header";
 import { PollingToggle } from "../components/polling-toggle";
@@ -34,8 +35,8 @@ const CENTER_STYLE: React.CSSProperties = {
 };
 
 const STAGE_LABEL: Record<"anchor" | "data", string> = {
-  anchor: "OCI クラスタを特定しています...",
-  data: "OCI リソースを取得しています...",
+  anchor: "Identifying OCI cluster...",
+  data: "Fetching OCI resources...",
 };
 
 export interface OciPageShellProps {
@@ -50,7 +51,7 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
   const { clusterKey } = useOciPageState(page);
 
   if (!clusterKey) {
-    return <div style={{ padding: 16 }}>アクティブなクラスタがありません</div>;
+    return <div style={{ padding: 16 }}>No active cluster</div>;
   }
 
   const state = ociClusterStore.getState(clusterKey, page);
@@ -61,7 +62,7 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
   const body = (() => {
     switch (state.status) {
       case "not_fetched":
-        return <div style={CENTER_STYLE}>読み込み中...</div>;
+        return <div style={CENTER_STYLE}>{LOADING_LABEL}</div>;
       case "fetching":
         return <div style={CENTER_STYLE}>{STAGE_LABEL[state.stage]}</div>;
       case "non_oke":

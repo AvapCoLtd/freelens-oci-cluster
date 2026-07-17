@@ -86,7 +86,7 @@ describe("buildHeaderInfo", () => {
   it("falls back to the catalog name (or a placeholder) for non-loaded states", () => {
     expect(buildHeaderInfo({ status: "not_fetched" }, "catalog-name")).toEqual({ clusterName: "catalog-name" });
     expect(buildHeaderInfo({ status: "fetching", stage: "anchor" }, undefined)).toEqual({
-      clusterName: "(クラスタ名不明)",
+      clusterName: "(cluster name unknown)",
     });
   });
 });

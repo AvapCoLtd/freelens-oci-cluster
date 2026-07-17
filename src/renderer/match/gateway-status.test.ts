@@ -33,14 +33,14 @@ describe("isSupportedGatewayId", () => {
 describe("gatewayHealth", () => {
   it("正常なゲートウェイはhealthy", () => {
     expect(gatewayHealth({ kind: "NAT Gateway", lifecycleState: "AVAILABLE", blockTraffic: false })).toEqual({
-      label: "正常",
+      label: "Healthy",
       healthy: true,
     });
   });
 
   it("IGW無効・NAT遮断・LPG未接続を検出する", () => {
     expect(gatewayHealth({ kind: "Internet Gateway", isEnabled: false, lifecycleState: "AVAILABLE" }).label).toBe(
-      "無効",
+      "Disabled",
     );
     expect(gatewayHealth({ kind: "NAT Gateway", blockTraffic: true, lifecycleState: "AVAILABLE" }).healthy).toBe(false);
     expect(gatewayHealth({ kind: "Local Peering Gateway", peeringStatus: "NEW" }).label).toBe("peering: NEW");

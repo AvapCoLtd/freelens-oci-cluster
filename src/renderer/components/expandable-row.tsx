@@ -58,7 +58,7 @@ export function ExpandableRow({ cells, renderDetail, colSpan, onExpand, rowStyle
     <>
       <tr className={HOVER_CLASS} style={{ cursor: "pointer", ...rowStyle }} onClick={onRowClick}>
         <td style={{ ...TD_STYLE, width: 24 }}>
-          <button type="button" onClick={toggle} style={TOGGLE_BUTTON_STYLE} title={expanded ? "閉じる" : "展開"}>
+          <button type="button" onClick={toggle} style={TOGGLE_BUTTON_STYLE} title={expanded ? "Collapse" : "Expand"}>
             <Icon material={expanded ? "expand_more" : "chevron_right"} small />
           </button>
         </td>

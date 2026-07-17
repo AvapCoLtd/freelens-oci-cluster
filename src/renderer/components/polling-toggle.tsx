@@ -47,7 +47,7 @@ export const PollingToggle = observer(function PollingToggle({
         checked={enabled}
         onChange={(event) => ociPreferencesStore.setNodePollingEnabled(event.target.checked)}
       />
-      自動更新({intervalSeconds}秒)
+      Auto-refresh ({intervalSeconds}s)
     </label>
   );
 });

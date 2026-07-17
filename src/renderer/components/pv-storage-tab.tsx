@@ -5,7 +5,7 @@ import { getCsiSource, resolvePvStorage } from "../match/pv-storage";
 import { sortRows } from "../match/sort-rows";
 import type { ClusterOciData } from "../sdk/fetch";
 import { ConsoleButton } from "./console-button";
-import { EmptyState } from "./empty-state";
+import { EmptyState, LOADING_LABEL } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { SortableHeaderCell } from "./sortable-header-cell";
@@ -25,11 +25,11 @@ interface StorageResolution {
   backupConsoleType?: OciConsoleResourceType;
 }
 
-// バックアップポリシー名の表示(未割当="なし"は保護されていないボリュームの検出材料)。
+// バックアップポリシー名の表示(未割当="None"は保護されていないボリュームの検出材料)。
 function backupPolicyLabel(policy: ClusterOciData["volumeBackupPolicies"][string] | undefined): string {
-  if (!policy) return "取得中...";
+  if (!policy) return LOADING_LABEL;
   if (!policy.ok) return "-";
-  return policy.data.policyName ?? "なし";
+  return policy.data.policyName ?? "None";
 }
 
 function resolveStorage(
@@ -71,7 +71,7 @@ function resolveStorage(
     const ocid = resolution.ocid;
     const fsResult = data.fileSystems[ocid];
     if (!fsResult?.ok) {
-      return { displayName: "-", kindLabel: "FSS", ocid, consoleType: "filesystem", backupLabel: "取得中..." };
+      return { displayName: "-", kindLabel: "FSS", ocid, consoleType: "filesystem", backupLabel: LOADING_LABEL };
     }
     const policyId = fsResult.data.filesystemSnapshotPolicyId;
     return {
@@ -80,12 +80,12 @@ function resolveStorage(
       ocid,
       consoleType: "filesystem",
       kindLabel: "FSS",
-      backupLabel: policyId ? backupPolicyLabel(data.fssSnapshotPolicies[policyId]) : "なし",
+      backupLabel: policyId ? backupPolicyLabel(data.fssSnapshotPolicies[policyId]) : "None",
       backupPolicyId: policyId,
       backupConsoleType: "fss-snapshot-policy",
     };
   }
-  return { displayName: "-", kindLabel: "未対応", backupLabel: "-" };
+  return { displayName: "-", kindLabel: "Unsupported", backupLabel: "-" };
 }
 
 type PvColumn = "pv" | "pvc" | "entity" | "kind" | "size" | "backup" | "lifecycle";
@@ -117,11 +117,11 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
   const [sort, toggleSort] = useColumnSort<PvColumn>("pv");
 
   if (!pvStore.isLoaded) {
-    return <EmptyState message="読み込み中..." />;
+    return <EmptyState message={LOADING_LABEL} />;
   }
   const pvs = pvStore.items;
   if (pvs.length === 0) {
-    return <EmptyState message="PersistentVolume がありません" />;
+    return <EmptyState message="No PersistentVolumes" />;
   }
 
   const rows: PvRow[] = pvs.map((pv) => {
@@ -149,16 +149,16 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
               PVC
             </SortableHeaderCell>
             <SortableHeaderCell column="entity" sort={sort} onSort={toggleSort}>
-              実体名
+              Entity Name
             </SortableHeaderCell>
             <SortableHeaderCell column="kind" sort={sort} onSort={toggleSort}>
-              種別
+              Kind
             </SortableHeaderCell>
             <SortableHeaderCell column="size" sort={sort} onSort={toggleSort}>
-              サイズ(GB)
+              Size (GB)
             </SortableHeaderCell>
             <SortableHeaderCell column="backup" sort={sort} onSort={toggleSort}>
-              バックアップ
+              Backup
             </SortableHeaderCell>
             <SortableHeaderCell column="lifecycle" sort={sort} onSort={toggleSort}>
               lifecycle-state
@@ -170,13 +170,13 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
         <tbody>
           {sortedRows.map((row) => {
             const { storage } = row;
-            if (storage.kindLabel === "未対応") {
+            if (storage.kindLabel === "Unsupported") {
               return (
                 <tr key={row.key} style={UNMATCHED_ROW_STYLE}>
                   <td style={TD_STYLE}>{row.pvName}</td>
                   <td style={TD_STYLE}>{row.pvcLabel}</td>
                   <td style={TD_STYLE} colSpan={6}>
-                    未対応(対応する Block Volume / FSS が見つかりません)
+                    Unsupported (no matching Block Volume / FSS found)
                   </td>
                 </tr>
               );

@@ -17,6 +17,6 @@ export async function resolveHostIps(host: string): Promise<OciResult<string[]>>
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code && NOT_FOUND_CODES.has(code)) return { ok: true, data: [] };
-    return { ok: false, kind: "other", raw: { message: `DNS解決に失敗しました: ${String(error)}`, code } };
+    return { ok: false, kind: "other", raw: { message: `DNS resolution failed: ${String(error)}`, code } };
   }
 }

@@ -53,7 +53,7 @@ export function OciHeader({ info, fetching, onRefresh, extras }: OciHeaderProps)
         <span style={TITLE_STYLE}>{info.clusterName}</span>
         {info.lifecycleState && <LifecycleBadge state={info.lifecycleState} />}
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>{extras}</span>
-        <Button primary small disabled={fetching} onClick={onRefresh} label={fetching ? "更新中..." : "更新"} />
+        <Button primary small disabled={fetching} onClick={onRefresh} label={fetching ? "Refreshing..." : "Refresh"} />
         {info.clusterOcid && info.region && (
           <ConsoleButton type="cluster" ocid={info.clusterOcid} region={info.region} />
         )}
@@ -66,8 +66,8 @@ export function OciHeader({ info, fetching, onRefresh, extras }: OciHeaderProps)
             <OcidCopyButton ocid={info.clusterOcid} />
           </span>
         )}
-        {info.fetchedAt && <span>最終更新: {new Date(info.fetchedAt).toLocaleString()}</span>}
-        {info.clusterInfoFailed && <span style={ERROR_TEXT_STYLE}>クラスタ情報の取得に失敗しました</span>}
+        {info.fetchedAt && <span>Last updated: {new Date(info.fetchedAt).toLocaleString()}</span>}
+        {info.clusterInfoFailed && <span style={ERROR_TEXT_STYLE}>Failed to fetch cluster info</span>}
       </div>
     </div>
   );

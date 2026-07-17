@@ -11,17 +11,17 @@ const SUB_TABLE_STYLE: React.CSSProperties = { ...TABLE_STYLE, fontSize: 12 };
 
 /** SL/NSG共通のルール表(展開領域用)。 */
 export function RuleTable({ rows }: { rows: RuleRow[] }) {
-  if (rows.length === 0) return <div style={{ color: "var(--textColorSecondary, #9aa0a6)" }}>ルールなし</div>;
+  if (rows.length === 0) return <div style={{ color: "var(--textColorSecondary, #9aa0a6)" }}>No rules</div>;
   return (
     <table style={SUB_TABLE_STYLE}>
       <thead>
         <tr>
-          <th style={TH_STYLE}>方向</th>
-          <th style={TH_STYLE}>プロトコル</th>
-          <th style={TH_STYLE}>送信元/宛先</th>
-          <th style={TH_STYLE}>ポート</th>
+          <th style={TH_STYLE}>Direction</th>
+          <th style={TH_STYLE}>Protocol</th>
+          <th style={TH_STYLE}>Source / Destination</th>
+          <th style={TH_STYLE}>Port</th>
           <th style={TH_STYLE}>stateless</th>
-          <th style={TH_STYLE}>説明</th>
+          <th style={TH_STYLE}>Description</th>
         </tr>
       </thead>
       <tbody>
@@ -50,15 +50,15 @@ export interface RouteRuleTableProps {
 
 /** RTのルート表(展開領域用)。 */
 export function RouteRuleTable({ rows, renderStatus }: RouteRuleTableProps) {
-  if (rows.length === 0) return <div style={{ color: "var(--textColorSecondary, #9aa0a6)" }}>ルートなし</div>;
+  if (rows.length === 0) return <div style={{ color: "var(--textColorSecondary, #9aa0a6)" }}>No routes</div>;
   return (
     <table style={SUB_TABLE_STYLE}>
       <thead>
         <tr>
-          <th style={TH_STYLE}>宛先</th>
-          <th style={TH_STYLE}>経由</th>
-          {renderStatus && <th style={TH_STYLE}>経由の状態</th>}
-          <th style={TH_STYLE}>説明</th>
+          <th style={TH_STYLE}>Destination</th>
+          <th style={TH_STYLE}>Via</th>
+          {renderStatus && <th style={TH_STYLE}>Via Status</th>}
+          <th style={TH_STYLE}>Description</th>
         </tr>
       </thead>
       <tbody>

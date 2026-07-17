@@ -57,7 +57,7 @@ function execCredCommand(authCommand: string): Promise<OciResult<string>> {
   return new Promise((resolvePromise) => {
     execFile(command, args, { timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_BUFFER }, (error, stdout, stderr) => {
       if (error) {
-        resolvePromise(credCommandError("認証情報コマンドの実行に失敗しました", { code: error.code, stderr }));
+        resolvePromise(credCommandError("Credentials command execution failed", { code: error.code, stderr }));
         return;
       }
       resolvePromise({ ok: true, data: stdout });
@@ -83,7 +83,7 @@ function buildProviderFromCred(cred: AuthCred): OciResult<ResolvedAuth> {
       data: { provider: new SessionTokenAuthDetailsProvider(cred.token, cred.privateKeyPem), regionId: cred.region },
     };
   } catch (error) {
-    return credCommandError(`認証情報から認証プロバイダを構築できません: ${String(error)}`);
+    return credCommandError(`Failed to build an auth provider from the credentials: ${String(error)}`);
   }
 }
 
@@ -94,11 +94,13 @@ async function resolveFromCommand(authCommand: string): Promise<OciResult<Resolv
   if (!parsed.ok) {
     switch (parsed.reason) {
       case "invalid_json":
-        return credCommandError("認証情報コマンドの出力がJSONとして解釈できません(出力自体は表示しません)");
+        return credCommandError(
+          "The credentials command's output could not be parsed as JSON (output itself is not shown)",
+        );
       case "unknown_type":
-        return credCommandError('認証情報JSONの"type"が不正です(api_key / security_token のみ対応)');
+        return credCommandError('Invalid "type" in credentials JSON (only api_key / security_token are supported)');
       case "missing_fields":
-        return credCommandError(`認証情報JSONにフィールドが欠落しています: ${parsed.missing.join(", ")}`);
+        return credCommandError(`Credentials JSON is missing fields: ${parsed.missing.join(", ")}`);
     }
   }
   return buildProviderFromCred(parsed.cred);
@@ -114,11 +116,11 @@ function resolveFromConfigFile(): OciResult<ResolvedAuth> {
       : new common.ConfigFileAuthenticationDetailsProvider(path);
     const regionId = provider.getRegion()?.regionId;
     if (!regionId) {
-      return { ok: false, kind: "other", raw: { message: "~/.oci/config にregionがありません" } };
+      return { ok: false, kind: "other", raw: { message: "~/.oci/config has no region" } };
     }
     return { ok: true, data: { provider, regionId } };
   } catch (error) {
-    return { ok: false, kind: "other", raw: { message: `~/.oci/config の読み取りに失敗しました: ${String(error)}` } };
+    return { ok: false, kind: "other", raw: { message: `Failed to read ~/.oci/config: ${String(error)}` } };
   }
 }
 
@@ -128,7 +130,7 @@ function resolveAuthUncached(authCommand: string): Promise<OciResult<ResolvedAut
   return {
     ok: false,
     kind: "auth_missing",
-    raw: { message: "~/.oci/config が存在せず、認証情報コマンドも未設定です" },
+    raw: { message: "~/.oci/config does not exist and no credentials command is configured" },
   };
 }
 

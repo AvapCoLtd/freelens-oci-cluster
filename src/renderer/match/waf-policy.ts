@@ -37,7 +37,7 @@ export function wafPolicyRuleRows(policy: OciWafPolicy): WafRuleRow[] {
     });
   };
 
-  for (const rule of policy.requestAccessControl?.rules ?? []) push("リクエスト制御", rule);
+  for (const rule of policy.requestAccessControl?.rules ?? []) push("Request Control", rule);
   for (const rule of policy.requestRateLimiting?.rules ?? []) {
     const limits = (rule.configurations ?? [])
       .map(
@@ -46,16 +46,16 @@ export function wafPolicyRuleRows(policy: OciWafPolicy): WafRuleRow[] {
           (config.actionDurationInSeconds ? ` (block ${config.actionDurationInSeconds}s)` : ""),
       )
       .join(", ");
-    push("レート制限", rule, [rule.condition, limits].filter(Boolean).join(" / ") || "-");
+    push("Rate Limiting", rule, [rule.condition, limits].filter(Boolean).join(" / ") || "-");
   }
   for (const rule of policy.requestProtection?.rules ?? []) {
     const capabilities = (rule.protectionCapabilities ?? []).map((cap) => cap.key).join(", ");
-    push("リクエスト保護", rule, [rule.condition, capabilities].filter(Boolean).join(" / ") || "-");
+    push("Request Protection", rule, [rule.condition, capabilities].filter(Boolean).join(" / ") || "-");
   }
-  for (const rule of policy.responseAccessControl?.rules ?? []) push("レスポンス制御", rule);
+  for (const rule of policy.responseAccessControl?.rules ?? []) push("Response Control", rule);
   for (const rule of policy.responseProtection?.rules ?? []) {
     const capabilities = (rule.protectionCapabilities ?? []).map((cap) => cap.key).join(", ");
-    push("レスポンス保護", rule, [rule.condition, capabilities].filter(Boolean).join(" / ") || "-");
+    push("Response Protection", rule, [rule.condition, capabilities].filter(Boolean).join(" / ") || "-");
   }
   return rows;
 }

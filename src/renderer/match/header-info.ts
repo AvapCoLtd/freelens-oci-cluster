@@ -13,7 +13,7 @@ export interface OciHeaderInfo {
 
 /** state(取得中/非OKE/致命エラーを含む)からヘッダ表示用の情報を組み立てる。 */
 export function buildHeaderInfo(state: OciClusterViewState, catalogName: string | undefined): OciHeaderInfo {
-  const fallbackName = catalogName ?? "(クラスタ名不明)";
+  const fallbackName = catalogName ?? "(cluster name unknown)";
   if (state.status !== "loaded") {
     return { clusterName: fallbackName };
   }

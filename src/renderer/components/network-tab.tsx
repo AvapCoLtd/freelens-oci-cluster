@@ -19,7 +19,7 @@ import type { ClusterOciData } from "../sdk/fetch";
 import type { OciResult } from "../sdk/result";
 import { backendHealthKey, ociClusterStore } from "../store/oci-cluster-store";
 import { ConsoleButton } from "./console-button";
-import { EmptyState } from "./empty-state";
+import { EmptyState, LOADING_LABEL } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { ExpandableRow } from "./expandable-row";
 import { Icon } from "./freelens-ui";
@@ -51,6 +51,9 @@ const BLOCK_TITLE_STYLE: React.CSSProperties = {
 
 const PENDING_STYLE: React.CSSProperties = { color: "var(--textColorSecondary, #9aa0a6)", fontSize: 12 };
 
+const FETCH_FAILED_LABEL = "Fetch failed";
+const RESOLUTION_FAILED_LABEL = "Resolution failed";
+
 interface SectionContext {
   data: ClusterOciData;
   region: string | undefined;
@@ -65,7 +68,7 @@ function ResultBlock<T>({
   result: OciResult<T> | undefined;
   render: (data: T) => React.ReactNode;
 }) {
-  if (!result) return <div style={PENDING_STYLE}>取得中...</div>;
+  if (!result) return <div style={PENDING_STYLE}>{LOADING_LABEL}</div>;
   if (!result.ok) return <SectionError kind={result.kind} raw={result.raw} />;
   return <>{render(result.data)}</>;
 }
@@ -102,7 +105,7 @@ function SlBlock({ ctx, slId }: { ctx: SectionContext; slId: string }) {
   const result = ctx.data.securityLists[slId];
   return (
     <NamedDetailBlock
-      label={`セキュリティリスト: ${result?.ok ? (result.data.displayName ?? slId) : slId}`}
+      label={`Security List: ${result?.ok ? (result.data.displayName ?? slId) : slId}`}
       ocid={slId}
       actions={
         ctx.region &&
@@ -120,8 +123,8 @@ function SlBlock({ ctx, slId }: { ctx: SectionContext; slId: string }) {
 function GatewayStatusCell({ ctx, entityId }: { ctx: SectionContext; entityId: string | undefined }) {
   if (!isSupportedGatewayId(entityId)) return <span>-</span>;
   const result = ctx.data.gateways[entityId];
-  if (!result) return <span style={PENDING_STYLE}>取得中...</span>;
-  if (!result.ok) return <StatusBadge label="取得失敗" tone="neutral" />;
+  if (!result) return <span style={PENDING_STYLE}>{LOADING_LABEL}</span>;
+  if (!result.ok) return <StatusBadge label={FETCH_FAILED_LABEL} tone="neutral" />;
   const health = gatewayHealth(result.data);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -135,7 +138,7 @@ function RtBlock({ ctx, rtId }: { ctx: SectionContext; rtId: string }) {
   const result = ctx.data.routeTables[rtId];
   return (
     <NamedDetailBlock
-      label={`ルートテーブル: ${result?.ok ? (result.data.displayName ?? rtId) : rtId}`}
+      label={`Route Table: ${result?.ok ? (result.data.displayName ?? rtId) : rtId}`}
       ocid={rtId}
       actions={
         ctx.region &&
@@ -196,7 +199,7 @@ function BackendSetBlock({ ctx, lb, backendSetName }: { ctx: SectionContext; lb:
         {result?.ok && <BackendHealthBadge status={result.data.status} />}
         <Icon
           material="refresh"
-          tooltip="再取得"
+          tooltip="Refetch"
           interactive
           small
           onClick={() => ociClusterStore.reloadBackendHealth(ctx.clusterKey, lb.kind, lb.id, backendSetName)}
@@ -207,7 +210,7 @@ function BackendSetBlock({ ctx, lb, backendSetName }: { ctx: SectionContext; lb:
         render={(health) => (
           <div style={{ fontSize: 12 }}>
             <div>
-              backend数: {health.totalBackendCount ?? "-"} / 状態: {health.status ?? "-"}
+              Backends: {health.totalBackendCount ?? "-"} / Status: {health.status ?? "-"}
             </div>
             {unhealthy.length > 0 && <div>unhealthy: {unhealthy.join(", ")}</div>}
           </div>
@@ -218,12 +221,12 @@ function BackendSetBlock({ ctx, lb, backendSetName }: { ctx: SectionContext; lb:
 }
 
 function CertificateBadge({ validTo, parseError }: { validTo?: string; parseError?: boolean }) {
-  if (parseError || !validTo) return <StatusBadge label="解析不可" tone="neutral" />;
+  if (parseError || !validTo) return <StatusBadge label="Unparseable" tone="neutral" />;
   const days = daysUntil(validTo, Date.now());
   if (days === undefined) return <StatusBadge label="-" tone="neutral" />;
-  if (days < 0) return <StatusBadge label={`期限切れ (${-days}日前)`} tone="error" />;
-  if (days <= 30) return <StatusBadge label={`残り${days}日`} tone="error" />;
-  return <StatusBadge label={`残り${days}日`} tone="success" />;
+  if (days < 0) return <StatusBadge label={`Expired (${-days}d ago)`} tone="error" />;
+  if (days <= 30) return <StatusBadge label={`${days}d left`} tone="error" />;
+  return <StatusBadge label={`${days}d left`} tone="success" />;
 }
 
 function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
@@ -239,13 +242,13 @@ function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
         return (
           <div key={certId} style={{ fontSize: 12, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
             <span>
-              証明書 {result?.ok ? (result.data.name ?? certId) : certId}: 期限{" "}
+              Certificate {result?.ok ? (result.data.name ?? certId) : certId}: expires{" "}
               {result?.ok && result.data.validTo ? new Date(result.data.validTo).toLocaleDateString() : "-"}
             </span>
             {result?.ok ? (
               <CertificateBadge validTo={result.data.validTo} />
             ) : (
-              <span style={PENDING_STYLE}>{result ? "取得失敗" : "取得中..."}</span>
+              <span style={PENDING_STYLE}>{result ? FETCH_FAILED_LABEL : LOADING_LABEL}</span>
             )}
           </div>
         );
@@ -253,8 +256,8 @@ function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
       {lb.certificates.map((cert) => (
         <div key={cert.name} style={{ fontSize: 12, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
           <span>
-            証明書 {cert.name}
-            {cert.listenerNames.length > 0 && ` (listener: ${cert.listenerNames.join(", ")})`}: 期限{" "}
+            Certificate {cert.name}
+            {cert.listenerNames.length > 0 && ` (listener: ${cert.listenerNames.join(", ")})`}: expires{" "}
             {cert.validTo ? new Date(cert.validTo).toLocaleDateString() : "-"}
             {cert.sans && ` / ${cert.sans}`}
           </span>
@@ -264,7 +267,7 @@ function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
       {lb.backendSetNames.map((name) => (
         <BackendSetBlock key={name} ctx={ctx} lb={lb} backendSetName={name} />
       ))}
-      {lb.backendSetNames.length === 0 && <div style={PENDING_STYLE}>backend set なし</div>}
+      {lb.backendSetNames.length === 0 && <div style={PENDING_STYLE}>No backend sets</div>}
       {lb.nsgIds.map((nsgId) => (
         <NsgBlock key={nsgId} ctx={ctx} nsgId={nsgId} />
       ))}
@@ -284,16 +287,16 @@ function LbSection({ ctx, lbRows }: { ctx: SectionContext; lbRows: LbRow[] }) {
         <SectionError kind={ctx.data.lbs.kind} raw={ctx.data.lbs.raw} />
       )}
       {lbRows.length === 0 ? (
-        <EmptyState message="LB / NLB がありません" />
+        <EmptyState message="No LB / NLB" />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
             <tr>
               <th style={{ ...TH_STYLE, width: 24 }} />
-              <th style={TH_STYLE}>名前</th>
-              <th style={TH_STYLE}>種別</th>
+              <th style={TH_STYLE}>Name</th>
+              <th style={TH_STYLE}>Kind</th>
               <th style={TH_STYLE}>IP</th>
-              <th style={TH_STYLE}>公開</th>
+              <th style={TH_STYLE}>Public</th>
               <th style={TH_STYLE}>lifecycle-state</th>
               <th style={TH_STYLE}>OCID</th>
               <th style={TH_STYLE} />
@@ -344,13 +347,13 @@ function SubnetDetail({ ctx, subnet }: { ctx: SectionContext; subnet: SubnetRow 
       ))}
       {subnet.routeTableId && <RtBlock ctx={ctx} rtId={subnet.routeTableId} />}
       {subnet.securityListIds.length === 0 && !subnet.routeTableId && (
-        <div style={PENDING_STYLE}>サブネット詳細を取得できていません</div>
+        <div style={PENDING_STYLE}>Subnet details not fetched</div>
       )}
     </div>
   );
 }
 
-const ROLE_LABEL: Record<string, string> = { lb: "LB", node: "ノード", endpoint: "endpoint" };
+const ROLE_LABEL: Record<string, string> = { lb: "LB", node: "Node", endpoint: "endpoint" };
 
 function SubnetSection({
   ctx,
@@ -371,15 +374,15 @@ function SubnetSection({
       <div style={SECTION_TITLE_STYLE}>{title}</div>
       {note && <div style={SECTION_NOTE_STYLE}>{note}</div>}
       {rows.length === 0 ? (
-        <EmptyState message="対象サブネットがありません" />
+        <EmptyState message="No target subnets" />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
             <tr>
               <th style={{ ...TH_STYLE, width: 24 }} />
-              <th style={TH_STYLE}>サブネット</th>
+              <th style={TH_STYLE}>Subnet</th>
               <th style={TH_STYLE}>CIDR</th>
-              <th style={TH_STYLE}>役割</th>
+              <th style={TH_STYLE}>Role</th>
               <th style={TH_STYLE}>public IP</th>
               <th style={TH_STYLE}>OCID</th>
               <th style={TH_STYLE} />
@@ -400,8 +403,8 @@ function SubnetSection({
                       {subnet.prohibitPublicIpOnVnic === undefined
                         ? "-"
                         : subnet.prohibitPublicIpOnVnic
-                          ? "禁止"
-                          : "許可"}
+                          ? "Prohibited"
+                          : "Allowed"}
                     </td>
                     <td style={TD_STYLE}>
                       <OcidCopyButton ocid={subnet.subnetId} />
@@ -431,11 +434,11 @@ function SubnetSection({
 }
 
 function WafPolicyDetail({ ctx, policyId }: { ctx: SectionContext; policyId: string | undefined }) {
-  if (!policyId) return <div style={PENDING_STYLE}>ポリシーOCIDが取得できていません</div>;
+  if (!policyId) return <div style={PENDING_STYLE}>Policy OCID not fetched</div>;
   const result = ctx.data.wafPolicies[policyId];
   return (
     <NamedDetailBlock
-      label={`ポリシー: ${result?.ok ? result.data.displayName : policyId}`}
+      label={`Policy: ${result?.ok ? result.data.displayName : policyId}`}
       ocid={policyId}
       actions={ctx.region && <ConsoleButton type="waf-policy" ocid={policyId} region={ctx.region} />}
       result={result}
@@ -444,18 +447,18 @@ function WafPolicyDetail({ ctx, policyId }: { ctx: SectionContext; policyId: str
         return (
           <div>
             <div style={{ fontSize: 12, marginBottom: 4 }}>
-              既定アクション(どのルールにも一致しない場合): {wafDefaultAction(policy)}
+              Default action (when no rule matches): {wafDefaultAction(policy)}
             </div>
             {rows.length === 0 ? (
-              <div style={PENDING_STYLE}>ルールなし(既定アクションのみ)</div>
+              <div style={PENDING_STYLE}>No rules (default action only)</div>
             ) : (
               <table style={{ ...TABLE_STYLE, fontSize: 12 }}>
                 <thead>
                   <tr>
-                    <th style={TH_STYLE}>段階</th>
-                    <th style={TH_STYLE}>ルール</th>
-                    <th style={TH_STYLE}>アクション</th>
-                    <th style={TH_STYLE}>条件・内容</th>
+                    <th style={TH_STYLE}>Stage</th>
+                    <th style={TH_STYLE}>Rule</th>
+                    <th style={TH_STYLE}>Action</th>
+                    <th style={TH_STYLE}>Condition / Content</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -478,9 +481,9 @@ function WafPolicyDetail({ ctx, policyId }: { ctx: SectionContext; policyId: str
 }
 
 const DNS_MATCH_BADGE: Record<DnsMatchKind, { label: string; tone: "success" | "error" | "neutral" }> = {
-  matched: { label: "一致", tone: "success" },
-  unmatched: { label: "不一致", tone: "error" },
-  unresolved: { label: "未解決", tone: "error" },
+  matched: { label: "Matched", tone: "success" },
+  unmatched: { label: "Mismatched", tone: "error" },
+  unresolved: { label: "Unresolved", tone: "error" },
 };
 
 function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
@@ -489,19 +492,19 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
     <section>
       <div style={SECTION_TITLE_STYLE}>DNS</div>
       <div style={SECTION_NOTE_STYLE}>
-        Ingress / Service(external-dns)のホスト名をこの端末のリゾルバで解決し、クラスタ関連 LB の IP と突合します。
-        スプリット DNS 環境では外部からの解決結果と異なることがあります。
+        Resolves Ingress / Service (external-dns) hostnames using this machine's resolver and cross-checks them against
+        cluster-related LB IPs. In split-DNS environments, results may differ from external resolution.
       </div>
       {hosts.length === 0 ? (
-        <EmptyState message="突合対象のホスト名がありません(Ingress / external-dns アノテーションなし)" />
+        <EmptyState message="No hostnames to check (no Ingress / external-dns annotations)" />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
             <tr>
-              <th style={TH_STYLE}>ホスト名</th>
-              <th style={TH_STYLE}>解決IP</th>
-              <th style={TH_STYLE}>一致LB</th>
-              <th style={TH_STYLE}>判定</th>
+              <th style={TH_STYLE}>Hostname</th>
+              <th style={TH_STYLE}>Resolved IP</th>
+              <th style={TH_STYLE}>Matched LB</th>
+              <th style={TH_STYLE}>Result</th>
             </tr>
           </thead>
           <tbody>
@@ -512,10 +515,10 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
                   <tr key={host}>
                     <td style={TD_STYLE}>{host}</td>
                     <td style={TD_STYLE} colSpan={2}>
-                      {result ? `解決失敗: ${result.raw.message}` : "取得中..."}
+                      {result ? `${RESOLUTION_FAILED_LABEL}: ${result.raw.message}` : LOADING_LABEL}
                     </td>
                     <td style={TD_STYLE}>
-                      <StatusBadge label="解決失敗" tone="neutral" />
+                      <StatusBadge label={RESOLUTION_FAILED_LABEL} tone="neutral" />
                     </td>
                   </tr>
                 );
@@ -546,20 +549,20 @@ function WafSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
     <section>
       <div style={SECTION_TITLE_STYLE}>WAF</div>
       <div style={SECTION_NOTE_STYLE}>
-        WAF が付くのは classic LB のみ(NLB は対象外)。行を展開するとポリシーのルール(ブロック条件)を表示します。
+        WAF only applies to classic LB (not NLB). Expand a row to see the policy's rules (block conditions).
       </div>
       {!ctx.data.wafs.ok && ctx.data.wafs.kind !== "not_requested" && (
         <SectionError kind={ctx.data.wafs.kind} raw={ctx.data.wafs.raw} />
       )}
       {view.wafRows.length === 0 ? (
-        <EmptyState message="クラスタの classic LB に紐付く WAF はありません" />
+        <EmptyState message="No WAF attached to this cluster's classic LBs" />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
             <tr>
               <th style={{ ...TH_STYLE, width: 24 }} />
               <th style={TH_STYLE}>WAF</th>
-              <th style={TH_STYLE}>対象 LB</th>
+              <th style={TH_STYLE}>Target LB</th>
               <th style={TH_STYLE}>lifecycle-state</th>
               <th style={TH_STYLE}>OCID</th>
               <th style={TH_STYLE} />
@@ -618,20 +621,20 @@ export const NetworkTab = observer(function NetworkTab({ data, region, clusterKe
       <DnsSection ctx={ctx} view={view} />
       <WafSection ctx={ctx} view={view} />
       <LbSection ctx={ctx} lbRows={view.lbRows} />
-      <SubnetSection ctx={ctx} title="LB サブネット" rows={view.lbSubnetRows} />
+      <SubnetSection ctx={ctx} title="LB Subnet" rows={view.lbSubnetRows} />
       <SubnetSection
         ctx={ctx}
-        title="ノードサブネット"
+        title="Node Subnet"
         rows={view.nodeSubnetRows}
         extraNsgIds={view.nodeNsgIds}
-        note="ノードプールに NSG がある場合はサブネット表の下に表示します。"
+        note="If a node pool has an NSG, it is shown below the subnet table."
       />
       <SubnetSection
         ctx={ctx}
-        title="クラスタ endpoint"
+        title="Cluster endpoint"
         rows={view.endpointSubnetRow ? [view.endpointSubnetRow] : []}
         extraNsgIds={view.endpointNsgIds}
-        note="K8s API エンドポイントの属するサブネット(kubectl 疎通の確認用)。"
+        note="The subnet containing the K8s API endpoint (for checking kubectl connectivity)."
       />
     </div>
   );

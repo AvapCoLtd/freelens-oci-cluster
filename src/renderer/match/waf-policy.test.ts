@@ -46,19 +46,19 @@ describe("wafPolicyRuleRows", () => {
   it("全モジュールのルールをアクション種別・内容つきで平坦化する", () => {
     expect(wafPolicyRuleRows(POLICY)).toEqual([
       {
-        module: "リクエスト制御",
+        module: "Request Control",
         name: "allow-office-ip",
         action: "allowAction (ALLOW)",
         detail: "i_contains(['1.2.3.4'], connection.source.address)",
       },
       {
-        module: "レート制限",
+        module: "Rate Limiting",
         name: "limit-login",
         action: "blockAction (RETURN_HTTP_RESPONSE)",
         detail: "100req/60s (block 300s)",
       },
       {
-        module: "リクエスト保護",
+        module: "Request Protection",
         name: "owasp",
         action: "blockAction (RETURN_HTTP_RESPONSE)",
         detail: "920360",

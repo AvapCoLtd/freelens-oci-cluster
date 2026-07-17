@@ -18,5 +18,5 @@ export function ConsoleButton({ type, ocid, region, parentId }: ConsoleButtonPro
     );
   };
 
-  return <Icon material="open_in_new" tooltip="コンソールで開く" interactive small onClick={handleClick} />;
+  return <Icon material="open_in_new" tooltip="Open in Console" interactive small onClick={handleClick} />;
 }

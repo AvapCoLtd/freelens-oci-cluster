@@ -69,7 +69,7 @@ function clientsFor(auth: ResolvedAuth): OciClients {
 function withTimeout<T>(promise: Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error(`OCI API呼び出しが${CALL_TIMEOUT_MS / 1000}秒以内に完了しませんでした`)),
+      () => reject(new Error(`OCI API call did not complete within ${CALL_TIMEOUT_MS / 1000} seconds`)),
       CALL_TIMEOUT_MS,
     );
     promise.then(
@@ -427,7 +427,7 @@ export function fetchGatewayStatus(
           return { kind, displayName: g.displayName, lifecycleState: g.lifecycleState };
         }
         default:
-          throw new Error(`未対応のゲートウェイ種別です: ${gatewayKind}`);
+          throw new Error(`Unsupported gateway kind: ${gatewayKind}`);
       }
     }),
   );

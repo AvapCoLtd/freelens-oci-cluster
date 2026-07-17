@@ -31,7 +31,7 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
   // タブ表示の兄弟解決(clusterPageMenus.find(target.pageId一致))は先勝ちで、親が先だと
   // その子(oci-nodes)だけタブストリップが消える(実機確認済み)。
   clusterPageMenus = [
-    { id: "oci-nodes", parentId: "oci", target: { pageId: "oci-nodes" }, title: "ノード", components: {} },
+    { id: "oci-nodes", parentId: "oci", target: { pageId: "oci-nodes" }, title: "Nodes", components: {} },
     {
       id: "oci-service-lb",
       parentId: "oci",
@@ -43,14 +43,14 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
       id: "oci-pv-storage",
       parentId: "oci",
       target: { pageId: "oci-pv-storage" },
-      title: "PV↔ストレージ",
+      title: "PV ↔ Storage",
       components: {},
     },
     {
       id: "oci-network",
       parentId: "oci",
       target: { pageId: "oci-network" },
-      title: "ネットワーク",
+      title: "Network",
       components: {},
     },
     {
@@ -74,7 +74,7 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
     },
     {
       id: "oci-node-polling-interval",
-      title: "OCI: ノード自動更新の間隔(秒)",
+      title: "OCI: Node auto-refresh interval (seconds)",
       components: {
         Hint: OciPollingIntervalHint,
         Input: OciPollingIntervalInput,

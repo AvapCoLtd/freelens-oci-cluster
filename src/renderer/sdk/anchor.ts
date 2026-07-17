@@ -27,7 +27,7 @@ export async function resolveAnchor(instanceId: string, authCommand: string): Pr
     return {
       kind: "unexpected_shape",
       stage: "instance_get",
-      detail: `definedTags."Oracle-Tags".CreatedBy が想定形式(${NODEPOOL_OCID_PREFIX}...)ではありません: ${typeof createdBy === "string" ? createdBy : "(なし)"}`,
+      detail: `definedTags."Oracle-Tags".CreatedBy is not in the expected format (${NODEPOOL_OCID_PREFIX}...): ${typeof createdBy === "string" ? createdBy : "(None)"}`,
     };
   }
 
@@ -44,7 +44,7 @@ export async function resolveAnchor(instanceId: string, authCommand: string): Pr
     return {
       kind: "unexpected_shape",
       stage: "node_pool_get",
-      detail: "NodePool応答に clusterId または compartmentId がありません",
+      detail: "NodePool response is missing clusterId or compartmentId",
     };
   }
 
