@@ -1,6 +1,6 @@
 {
   "name": "freelens-oci-cluster",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "FreeLens extension that shows the OCI resources backing the open cluster (nodes, load balancers, storage)",
   "main": "out/main/index.js",
   "renderer": "out/renderer/index.js",

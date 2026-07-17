@@ -8,7 +8,7 @@ CONTAINER_STORE_DIR := /work/.pnpm-store
 DOCKER_RUN := docker run --rm --user $(shell id -u):$(shell id -g) -e HOME=/tmp -v $(CURDIR):/work -w /work $(IMAGE)
 
 .DEFAULT_GOAL := help
-.PHONY: help docker-image build pack deploy tag clean lint fmt test
+.PHONY: help docker-image build build-mock pack deploy deploy-mock tag clean lint fmt test
 
 help: ## このヘルプを表示
 	@grep -hE '^[a-zA-Z0-9_/%-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-28s\033[0m %s\n", $$1, $$2}'
@@ -23,12 +23,26 @@ build: docker-image ## 依存関係インストール+ビルド
 pack: build ## .tgz にパック
 	$(DOCKER_RUN) pnpm pack
 
+# mock/ 配下(gitignore対象)のダミーデータでOCI取得層を差し替えてビルドする。
+# README用スクリーンショット撮影専用(mock/oci-cluster-store.mock.tsが無いと通常ビルドと同じ結果になる)。
+build-mock: docker-image ## モックデータでビルド(スクリーンショット撮影用)
+	@mkdir -p .pnpm-store
+	$(DOCKER_RUN) sh -c "(pnpm i --store-dir $(CONTAINER_STORE_DIR) --frozen-lockfile || pnpm i --store-dir $(CONTAINER_STORE_DIR)) && MOCK=1 pnpm build"
+
 deploy: build ## $(FREELENS_EXT_DIR) へ配置(配置先 package.json のみ dev build metadata 付与)
 	@test -n "$(FREELENS_EXT_DIR)" || { echo "FREELENS_EXT_DIR is not set (set it in .env, or: make deploy FREELENS_EXT_DIR=/path/to/.freelens/extensions)"; exit 1; }
 	mkdir -p "$(FREELENS_EXT_DIR)/freelens-oci-cluster"
 	@jq --indent 2 --arg dev "dev.$$(date +%s)" '.version |= . + "+" + $$dev' package.json > "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json"
 	@echo "== freelens-oci-cluster v$$(jq -r .version "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json") =="
 	# cp -r は上書きのみで削除しないため、先に rm -rf しないと構成変更時に古いファイルが残る。
+	rm -rf "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
+	cp -r out "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
+
+deploy-mock: build-mock ## モックビルドを $(FREELENS_EXT_DIR) へ配置(スクリーンショット撮影用)
+	@test -n "$(FREELENS_EXT_DIR)" || { echo "FREELENS_EXT_DIR is not set (set it in .env, or: make deploy-mock FREELENS_EXT_DIR=/path/to/.freelens/extensions)"; exit 1; }
+	mkdir -p "$(FREELENS_EXT_DIR)/freelens-oci-cluster"
+	@jq --indent 2 --arg dev "mock.$$(date +%s)" '.version |= . + "+" + $$dev' package.json > "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json"
+	@echo "== freelens-oci-cluster v$$(jq -r .version "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json") (MOCK) =="
 	rm -rf "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
 	cp -r out "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
 
