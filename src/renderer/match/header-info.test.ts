@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { ClusterOciData } from "../oci/fetch";
+import type { ClusterOciData } from "../sdk/fetch";
+import type { OciCluster } from "../sdk/types";
 import type { OciClusterViewState, ResolvedAnchor } from "../store/oci-cluster-store";
 import { buildHeaderInfo } from "./header-info";
 
 const NOT_REQUESTED = {
   ok: false as const,
   kind: "not_requested" as const,
-  raw: { message: "not requested", stderr: "" },
+  raw: { message: "not requested" },
 };
 
 const ANCHOR: ResolvedAnchor = {
@@ -27,7 +28,20 @@ function loadedState(data: Partial<ClusterOciData>): OciClusterViewState {
       nlbs: NOT_REQUESTED,
       lbs: NOT_REQUESTED,
       volumes: NOT_REQUESTED,
+      nodePools: NOT_REQUESTED,
+      wafs: NOT_REQUESTED,
       fileSystems: {},
+      subnets: {},
+      securityLists: {},
+      routeTables: {},
+      nsgs: {},
+      wafPolicies: {},
+      gateways: {},
+      dnsChecks: {},
+      managedCerts: {},
+      volumeBackupPolicies: {},
+      fssSnapshotPolicies: {},
+      backendHealths: {},
       ...data,
     },
   };
@@ -41,8 +55,8 @@ describe("buildHeaderInfo", () => {
         data: {
           id: ANCHOR.clusterId,
           name: "my-cluster",
-          "kubernetes-version": "v1.29.1",
-          "lifecycle-state": "ACTIVE",
+          kubernetesVersion: "v1.29.1",
+          lifecycleState: "ACTIVE" as OciCluster["lifecycleState"],
         },
       },
     });
@@ -58,7 +72,7 @@ describe("buildHeaderInfo", () => {
 
   it("degrades to the catalog name and marks clusterInfoFailed when cluster fetch failed", () => {
     const state = loadedState({
-      cluster: { ok: false, kind: "internal", raw: { message: "boom", stderr: "" } },
+      cluster: { ok: false, kind: "internal", raw: { message: "boom" } },
     });
     expect(buildHeaderInfo(state, "catalog-name")).toEqual({
       clusterName: "catalog-name",

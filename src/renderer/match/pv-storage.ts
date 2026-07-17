@@ -33,12 +33,22 @@ export function resolvePvStorage(driver: string | undefined, volumeHandle: strin
   return { kind: "unsupported" };
 }
 
-/** 同一FileSystemを参照する複数PVがあっても`oci fs file-system get`をdistinct数だけ呼ぶための集合導出。 */
-export function distinctFileSystemOcids(resolutions: PvStorageResolution[]): string[] {
+/** 指定kindのPVが参照するOCID集合(distinct)。同一OCID参照PVが複数あっても取得はdistinct数だけ行うための導出。 */
+function distinctOcidsOfKind(resolutions: PvStorageResolution[], kind: PvStorageKind): string[] {
   const ocids = resolutions
-    .filter((r): r is PvStorageResolution & { ocid: string } => r.kind === "file_system" && !!r.ocid)
+    .filter((r): r is PvStorageResolution & { ocid: string } => r.kind === kind && !!r.ocid)
     .map((r) => r.ocid);
   return [...new Set(ocids)];
+}
+
+/** PVが参照するBlock VolumeのOCID集合(バックアップポリシー割当の取得対象)。 */
+export function distinctBlockVolumeOcids(resolutions: PvStorageResolution[]): string[] {
+  return distinctOcidsOfKind(resolutions, "block_volume");
+}
+
+/** 同一FileSystemを参照する複数PVがあっても`oci fs file-system get`をdistinct数だけ呼ぶための集合導出。 */
+export function distinctFileSystemOcids(resolutions: PvStorageResolution[]): string[] {
+  return distinctOcidsOfKind(resolutions, "file_system");
 }
 
 /** distinctなFileSystem OCIDのうち、まだ取得を開始していないものだけを返す(再照会時の重複実行防止)。 */

@@ -1,6 +1,12 @@
 import { Renderer } from "@freelensapp/extensions";
 import { reaction } from "mobx";
-import { OciCommandHint, OciCommandInput } from "./components/oci-command-preference";
+import {
+  OciAuthCommandHint,
+  OciAuthCommandInput,
+  OciPollingIntervalHint,
+  OciPollingIntervalInput,
+} from "./components/oci-auth-preference";
+import { OciNetworkPage } from "./pages/oci-network-page";
 import { OciNodesPage } from "./pages/oci-nodes-page";
 import { OciPvStoragePage } from "./pages/oci-pv-storage-page";
 import { OciServiceLbPage } from "./pages/oci-service-lb-page";
@@ -12,6 +18,7 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
     { id: "oci-nodes", components: { Page: OciNodesPage } },
     { id: "oci-service-lb", components: { Page: OciServiceLbPage } },
     { id: "oci-pv-storage", components: { Page: OciPvStoragePage } },
+    { id: "oci-network", components: { Page: OciNetworkPage } },
   ];
 
   // 子メニューにもidが必須(idを省くと登録キーがextension単位まで潰れて衝突し、最後の1件しか残らない。
@@ -40,6 +47,13 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
       components: {},
     },
     {
+      id: "oci-network",
+      parentId: "oci",
+      target: { pageId: "oci-network" },
+      title: "ネットワーク",
+      components: {},
+    },
+    {
       id: "oci",
       target: { pageId: "oci-nodes" },
       title: "OCI",
@@ -54,25 +68,33 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
       id: "oci-cluster-command",
       title: "OCI",
       components: {
-        Hint: OciCommandHint,
-        Input: OciCommandInput,
+        Hint: OciAuthCommandHint,
+        Input: OciAuthCommandInput,
+      },
+    },
+    {
+      id: "oci-node-polling-interval",
+      title: "OCI: ノード自動更新の間隔(秒)",
+      components: {
+        Hint: OciPollingIntervalHint,
+        Input: OciPollingIntervalInput,
       },
     },
   ];
 
-  private stopSyncingOverrideCommand?: () => void;
+  private stopSyncingAuthCommand?: () => void;
 
   protected onActivate(): void {
     ociPreferencesStore.loadExtension(this);
-    // overrideCommandはociClusterStoreの公開IF(設計:変更しない)。設定変更を都度反映するためreactionで同期する。
-    this.stopSyncingOverrideCommand = reaction(
-      () => ociPreferencesStore.ociCommand,
-      (value) => ociClusterStore.setOverrideCommand(value),
+    // 設定変更を都度反映するためreactionでociClusterStoreへ同期する。
+    this.stopSyncingAuthCommand = reaction(
+      () => ociPreferencesStore.authCommand,
+      (value) => ociClusterStore.setAuthCommand(value),
       { fireImmediately: true },
     );
   }
 
   protected onDeactivate(): void {
-    this.stopSyncingOverrideCommand?.();
+    this.stopSyncingAuthCommand?.();
   }
 }

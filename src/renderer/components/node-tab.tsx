@@ -1,12 +1,14 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
+import { nodePoolNameOfInstance } from "../match/node-pool";
 import { parseProviderId } from "../match/provider-id";
 import { sortRows } from "../match/sort-rows";
-import type { ClusterOciData } from "../oci/fetch";
-import type { OciInstanceSummary } from "../oci/types";
+import type { ClusterOciData } from "../sdk/fetch";
+import type { OciInstance } from "../sdk/types";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
+import { NodePoolSummary } from "./node-pool-summary";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { SortableHeaderCell } from "./sortable-header-cell";
 import { LifecycleBadge, ReadyBadge } from "./status-badge";
@@ -17,26 +19,28 @@ function isNodeReady(node: Renderer.K8sApi.Node): boolean {
   return (node.status?.conditions ?? []).some((c) => c.type === "Ready" && c.status === "True");
 }
 
-function findInstance(instances: OciInstanceSummary[], instanceId: string | undefined): OciInstanceSummary | undefined {
+function findInstance(instances: OciInstance[], instanceId: string | undefined): OciInstance | undefined {
   return instanceId ? instances.find((i) => i.id === instanceId) : undefined;
 }
 
-type NodeColumn = "node" | "instance" | "shape" | "adFd" | "lifecycle" | "ready";
+type NodeColumn = "node" | "instance" | "pool" | "shape" | "adFd" | "lifecycle" | "ready";
 
 interface NodeRow {
   key: string;
   node: Renderer.K8sApi.Node;
-  instance: OciInstanceSummary | undefined;
+  instance: OciInstance | undefined;
+  poolName: string | undefined;
   ready: boolean;
 }
 
 const SORT_VALUE: Record<NodeColumn, (row: NodeRow) => string | number | undefined> = {
   node: (row) => row.node.getName(),
-  instance: (row) => row.instance?.["display-name"],
+  instance: (row) => row.instance?.displayName,
+  pool: (row) => row.poolName,
   shape: (row) => row.instance?.shape,
   adFd: (row) =>
-    row.instance ? `${row.instance["availability-domain"] ?? ""} / ${row.instance["fault-domain"] ?? ""}` : undefined,
-  lifecycle: (row) => row.instance?.["lifecycle-state"],
+    row.instance ? `${row.instance.availabilityDomain ?? ""} / ${row.instance.faultDomain ?? ""}` : undefined,
+  lifecycle: (row) => row.instance?.lifecycleState,
   ready: (row) => (row.ready ? 1 : 0),
 };
 
@@ -49,6 +53,7 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
   const nodeStore = Renderer.K8sApi.nodesStore;
   const instancesResult = data.instances;
   const instances = instancesResult.ok ? instancesResult.data : [];
+  const nodePools = data.nodePools.ok ? data.nodePools.data : [];
   const [sort, toggleSort] = useColumnSort<NodeColumn>("node");
 
   if (!nodeStore.isLoaded) {
@@ -61,10 +66,12 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
 
   const rows: NodeRow[] = nodes.map((node) => {
     const parsed = parseProviderId(node.spec.providerID);
+    const instance = parsed.isOke ? findInstance(instances, parsed.instanceId) : undefined;
     return {
       key: node.getId(),
       node,
-      instance: parsed.isOke ? findInstance(instances, parsed.instanceId) : undefined,
+      instance,
+      poolName: nodePoolNameOfInstance(nodePools, instance),
       ready: isNodeReady(node),
     };
   });
@@ -72,6 +79,7 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
 
   return (
     <div>
+      <NodePoolSummary nodePools={data.nodePools} />
       {!instancesResult.ok && <SectionError kind={instancesResult.kind} raw={instancesResult.raw} />}
       <table style={TABLE_STYLE}>
         <thead>
@@ -81,6 +89,9 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
             </SortableHeaderCell>
             <SortableHeaderCell column="instance" sort={sort} onSort={toggleSort}>
               Instance
+            </SortableHeaderCell>
+            <SortableHeaderCell column="pool" sort={sort} onSort={toggleSort}>
+              プール
             </SortableHeaderCell>
             <SortableHeaderCell column="shape" sort={sort} onSort={toggleSort}>
               Shape
@@ -99,16 +110,17 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map(({ key, node, instance, ready }) => (
+          {sortedRows.map(({ key, node, instance, poolName, ready }) => (
             <tr key={key}>
               <td style={TD_STYLE}>{node.getName()}</td>
-              <td style={TD_STYLE}>{instance?.["display-name"] ?? "-"}</td>
+              <td style={TD_STYLE}>{instance?.displayName ?? "-"}</td>
+              <td style={TD_STYLE}>{poolName ?? "-"}</td>
               <td style={TD_STYLE}>{instance?.shape ?? "-"}</td>
               <td style={TD_STYLE}>
-                {instance ? `${instance["availability-domain"] ?? "-"} / ${instance["fault-domain"] ?? "-"}` : "-"}
+                {instance ? `${instance.availabilityDomain ?? "-"} / ${instance.faultDomain ?? "-"}` : "-"}
               </td>
               <td style={TD_STYLE}>
-                <LifecycleBadge state={instance?.["lifecycle-state"]} />
+                <LifecycleBadge state={instance?.lifecycleState} />
               </td>
               <td style={TD_STYLE}>
                 <ReadyBadge ready={ready} />

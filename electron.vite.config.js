@@ -64,6 +64,12 @@ export default defineConfig({
   },
   // Freelens の renderer process は Node.js モジュールを使えるため preload script として設定
   preload: {
+    resolve: {
+      alias: {
+        // 理由は build/fetch-global-shim.js を参照
+        "isomorphic-fetch": resolve(__dirname, "build/fetch-global-shim.js"),
+      },
+    },
     build: {
       lib: {
         entry: resolve(__dirname, "src/renderer/index.tsx"),

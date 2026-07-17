@@ -20,3 +20,15 @@ export interface BadgeProps {
   className?: string;
 }
 export const Badge = Renderer.Component.Badge as unknown as React.ComponentType<BadgeProps>;
+
+export interface ButtonProps {
+  label?: React.ReactNode;
+  primary?: boolean;
+  accent?: boolean;
+  plain?: boolean;
+  small?: boolean;
+  disabled?: boolean;
+  waiting?: boolean;
+  onClick?: (event: React.MouseEvent) => void;
+}
+export const Button = Renderer.Component.Button as unknown as React.ComponentType<ButtonProps>;

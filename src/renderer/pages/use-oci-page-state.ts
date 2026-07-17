@@ -13,6 +13,9 @@ function subscribeTargetsForPage(page: OciPage): Array<{ subscribe: () => () => 
       return [Renderer.K8sApi.serviceStore];
     case "pv-storage":
       return [Renderer.K8sApi.persistentVolumeStore];
+    case "network":
+      // クラスタ関連LB判定(経路2)のService ingress IPと、DNS突合のIngressホスト名を読むため両方購読する
+      return [Renderer.K8sApi.serviceStore, Renderer.K8sApi.ingressStore];
   }
 }
 

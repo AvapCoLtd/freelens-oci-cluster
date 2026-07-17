@@ -2,6 +2,26 @@ export interface ServiceLbMatchInput {
   namespace: string;
   name: string;
   ingressIps: string[];
+  /** 以下はLB照合には使わない表示用属性(externalTrafficPolicy=LocalはbackendがCRITICALになる典型原因) */
+  externalTrafficPolicy?: string;
+  portsLabel?: string;
+}
+
+interface ServiceLike {
+  spec: { type?: string };
+  status?: { loadBalancer?: { ingress?: { ip?: string }[] } };
+}
+
+/** type=LoadBalancerのServiceのingress IP集合(networkページのクラスタ関連LB判定=経路2に使う)。 */
+export function ingressIpsOfServices(services: ServiceLike[]): string[] {
+  const ips = new Set<string>();
+  for (const service of services) {
+    if (service.spec.type !== "LoadBalancer") continue;
+    for (const ingress of service.status?.loadBalancer?.ingress ?? []) {
+      if (ingress.ip) ips.add(ingress.ip);
+    }
+  }
+  return [...ips];
 }
 
 export interface LoadBalancerCandidate {

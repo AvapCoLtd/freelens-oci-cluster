@@ -6,12 +6,14 @@ export interface ConsoleButtonProps {
   type: OciConsoleResourceType;
   ocid: string;
   region: string;
+  /** 親付きリソース(subnet/SL/RT/NSG=VCN、waf=ポリシー)で必須。未解決の間は呼び出し元がボタン自体を出さない。 */
+  parentId?: string;
 }
 
 // window.openはElectronのBrowserWindow内遷移になり得るため、既定ブラウザで開くCommon.Util.openExternalを使う。
-export function ConsoleButton({ type, ocid, region }: ConsoleButtonProps) {
+export function ConsoleButton({ type, ocid, region, parentId }: ConsoleButtonProps) {
   const handleClick = () => {
-    Common.Util.openExternal(buildConsoleUrl(type, ocid, region)).catch((error: unknown) =>
+    Common.Util.openExternal(buildConsoleUrl(type, ocid, region, parentId)).catch((error: unknown) =>
       console.error("[freelens-oci-cluster] openExternal failed", error),
     );
   };

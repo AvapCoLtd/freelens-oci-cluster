@@ -29,8 +29,8 @@ export function buildHeaderInfo(state: OciClusterViewState, catalogName: string 
   }
   return {
     clusterName: state.data.cluster.data.name ?? fallbackName,
-    lifecycleState: state.data.cluster.data["lifecycle-state"],
-    kubernetesVersion: state.data.cluster.data["kubernetes-version"],
+    lifecycleState: state.data.cluster.data.lifecycleState,
+    kubernetesVersion: state.data.cluster.data.kubernetesVersion,
     clusterOcid: state.data.cluster.data.id,
     region,
     fetchedAt: state.fetchedAt,

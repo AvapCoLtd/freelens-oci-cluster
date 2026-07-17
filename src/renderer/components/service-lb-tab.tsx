@@ -3,7 +3,7 @@ import { observer } from "mobx-react";
 import type { LoadBalancerCandidate, ServiceLbMatchInput } from "../match/service-lb";
 import { matchServicesToLoadBalancers } from "../match/service-lb";
 import { sortRows } from "../match/sort-rows";
-import type { ClusterOciData } from "../oci/fetch";
+import type { ClusterOciData } from "../sdk/fetch";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -23,12 +23,12 @@ function buildLbInfo(data: ClusterOciData): Map<string, LbInfo> {
   const info = new Map<string, LbInfo>();
   if (data.nlbs.ok) {
     for (const nlb of data.nlbs.data) {
-      info.set(nlb.id, { displayName: nlb["display-name"], lifecycleState: nlb["lifecycle-state"], kind: "nlb" });
+      info.set(nlb.id, { displayName: nlb.displayName, lifecycleState: nlb.lifecycleState, kind: "nlb" });
     }
   }
   if (data.lbs.ok) {
     for (const lb of data.lbs.data) {
-      info.set(lb.id, { displayName: lb["display-name"], lifecycleState: lb["lifecycle-state"], kind: "lb" });
+      info.set(lb.id, { displayName: lb.displayName, lifecycleState: lb.lifecycleState, kind: "lb" });
     }
   }
   return info;
@@ -38,13 +38,13 @@ function buildCandidates(data: ClusterOciData): LoadBalancerCandidate[] {
   const candidates: LoadBalancerCandidate[] = [];
   if (data.nlbs.ok) {
     for (const nlb of data.nlbs.data) {
-      const ips = (nlb["ip-addresses"] ?? []).map((ip) => ip["ip-address"]).filter((ip): ip is string => !!ip);
+      const ips = (nlb.ipAddresses ?? []).map((ip) => ip.ipAddress).filter((ip): ip is string => !!ip);
       candidates.push({ ocid: nlb.id, kind: "nlb", ips });
     }
   }
   if (data.lbs.ok) {
     for (const lb of data.lbs.data) {
-      const ips = (lb["ip-addresses"] ?? []).map((ip) => ip["ip-address"]).filter((ip): ip is string => !!ip);
+      const ips = (lb.ipAddresses ?? []).map((ip) => ip.ipAddress).filter((ip): ip is string => !!ip);
       candidates.push({ ocid: lb.id, kind: "lb", ips });
     }
   }
@@ -54,22 +54,34 @@ function buildCandidates(data: ClusterOciData): LoadBalancerCandidate[] {
 function buildServiceInputs(services: Renderer.K8sApi.Service[]): ServiceLbMatchInput[] {
   return services
     .filter((service) => service.spec.type === "LoadBalancer")
-    .map((service) => ({
-      namespace: service.getNs() ?? "",
-      name: service.getName(),
-      ingressIps: (service.status?.loadBalancer?.ingress ?? [])
-        .map((ingress) => ingress.ip)
-        .filter((ip): ip is string => !!ip),
-    }));
+    .map((service) => {
+      const spec = service.spec as {
+        externalTrafficPolicy?: string;
+        healthCheckNodePort?: number;
+        ports?: { port: number; nodePort?: number }[];
+      };
+      const ports = (spec.ports ?? []).map((port) => `${port.port}→${port.nodePort ?? "-"}`).join(", ");
+      return {
+        namespace: service.getNs() ?? "",
+        name: service.getName(),
+        ingressIps: (service.status?.loadBalancer?.ingress ?? [])
+          .map((ingress) => ingress.ip)
+          .filter((ip): ip is string => !!ip),
+        externalTrafficPolicy: spec.externalTrafficPolicy,
+        portsLabel: spec.healthCheckNodePort ? `${ports} (healthCheck: ${spec.healthCheckNodePort})` : ports,
+      };
+    });
 }
 
-type ServiceLbColumn = "service" | "lbName" | "kind" | "ip" | "lifecycle";
+type ServiceLbColumn = "service" | "lbName" | "kind" | "ip" | "trafficPolicy" | "nodePorts" | "lifecycle";
 
 interface ServiceLbRow {
   key: string;
   serviceLabel: string;
   lbInfo: LbInfo | undefined;
   matchedIp: string | undefined;
+  trafficPolicy: string | undefined;
+  nodePorts: string | undefined;
   ocid: string | undefined;
   consoleType: "nlb" | "lb" | undefined;
 }
@@ -79,6 +91,8 @@ const SORT_VALUE: Record<ServiceLbColumn, (row: ServiceLbRow) => string | number
   lbName: (row) => row.lbInfo?.displayName,
   kind: (row) => row.lbInfo?.kind,
   ip: (row) => row.matchedIp,
+  trafficPolicy: (row) => row.trafficPolicy,
+  nodePorts: (row) => row.nodePorts,
   lifecycle: (row) => row.lbInfo?.lifecycleState,
 };
 
@@ -110,6 +124,8 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
         serviceLabel: key,
         lbInfo: undefined,
         matchedIp: undefined,
+        trafficPolicy: match.service.externalTrafficPolicy,
+        nodePorts: match.service.portsLabel,
         ocid: undefined,
         consoleType: undefined,
       };
@@ -121,6 +137,8 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
       serviceLabel: key,
       lbInfo: info,
       matchedIp,
+      trafficPolicy: match.service.externalTrafficPolicy,
+      nodePorts: match.service.portsLabel,
       ocid: match.loadBalancer.ocid,
       consoleType: match.loadBalancer.kind,
     };
@@ -146,6 +164,12 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
             <SortableHeaderCell column="ip" sort={sort} onSort={toggleSort}>
               IP
             </SortableHeaderCell>
+            <SortableHeaderCell column="trafficPolicy" sort={sort} onSort={toggleSort}>
+              extTrafficPolicy
+            </SortableHeaderCell>
+            <SortableHeaderCell column="nodePorts" sort={sort} onSort={toggleSort}>
+              port→NodePort
+            </SortableHeaderCell>
             <SortableHeaderCell column="lifecycle" sort={sort} onSort={toggleSort}>
               lifecycle-state
             </SortableHeaderCell>
@@ -159,7 +183,7 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
               return (
                 <tr key={row.key} style={UNMATCHED_ROW_STYLE}>
                   <td style={TD_STYLE}>{row.serviceLabel}</td>
-                  <td style={TD_STYLE} colSpan={5}>
+                  <td style={TD_STYLE} colSpan={7}>
                     未対応(対応する LB が見つかりません)
                   </td>
                 </tr>
@@ -171,6 +195,8 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
                 <td style={TD_STYLE}>{row.lbInfo?.displayName ?? "-"}</td>
                 <td style={TD_STYLE}>{row.consoleType === "nlb" ? "NLB" : "classic"}</td>
                 <td style={TD_STYLE}>{row.matchedIp ?? "-"}</td>
+                <td style={TD_STYLE}>{row.trafficPolicy ?? "-"}</td>
+                <td style={TD_STYLE}>{row.nodePorts || "-"}</td>
                 <td style={TD_STYLE}>
                   <LifecycleBadge state={row.lbInfo?.lifecycleState} />
                 </td>

@@ -3,10 +3,11 @@ import { observer } from "mobx-react";
 import type * as React from "react";
 import { FatalErrorGuidance, NonOkeGuidance } from "../components/error-guidance";
 import { OciHeader } from "../components/oci-header";
+import { PollingToggle } from "../components/polling-toggle";
 import { buildHeaderInfo } from "../match/header-info";
 import { extractRegionFromOcid } from "../match/ocid-region";
 import type { OciPage } from "../match/page-sections";
-import type { ClusterOciData } from "../oci/fetch";
+import type { ClusterOciData } from "../sdk/fetch";
 import { ociClusterStore } from "../store/oci-cluster-store";
 import { useOciPageState } from "./use-oci-page-state";
 
@@ -39,7 +40,7 @@ const STAGE_LABEL: Record<"anchor" | "data", string> = {
 
 export interface OciPageShellProps {
   page: OciPage;
-  renderLoaded: (data: ClusterOciData, region: string | undefined) => React.ReactNode;
+  renderLoaded: (data: ClusterOciData, region: string | undefined, clusterKey: string) => React.ReactNode;
 }
 
 // clusterPagesで個別ページ登録される側(oci-nodes-page.tsx等)はhostがobserver()で包むため
@@ -75,7 +76,7 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
           />
         );
       case "loaded":
-        return renderLoaded(state.data, region);
+        return renderLoaded(state.data, region, clusterKey);
     }
   })();
 
@@ -85,6 +86,7 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
         info={headerInfo}
         fetching={state.status === "fetching"}
         onRefresh={() => ociClusterStore.refresh(clusterKey, page)}
+        extras={<PollingToggle clusterKey={clusterKey} page={page} />}
       />
       <div style={BODY_STYLE}>{body}</div>
     </div>

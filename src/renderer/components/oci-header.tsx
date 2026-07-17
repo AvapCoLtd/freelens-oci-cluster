@@ -1,6 +1,7 @@
 import type * as React from "react";
 import type { OciHeaderInfo } from "../match/header-info";
 import { ConsoleButton } from "./console-button";
+import { Button } from "./freelens-ui";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { LifecycleBadge } from "./status-badge";
 
@@ -42,17 +43,17 @@ export interface OciHeaderProps {
   info: OciHeaderInfo;
   fetching: boolean;
   onRefresh: () => void;
+  extras?: React.ReactNode;
 }
 
-export function OciHeader({ info, fetching, onRefresh }: OciHeaderProps) {
+export function OciHeader({ info, fetching, onRefresh, extras }: OciHeaderProps) {
   return (
     <div style={HEADER_STYLE}>
       <div style={TITLE_ROW_STYLE}>
         <span style={TITLE_STYLE}>{info.clusterName}</span>
         {info.lifecycleState && <LifecycleBadge state={info.lifecycleState} />}
-        <button type="button" onClick={onRefresh} disabled={fetching} style={{ marginLeft: "auto" }}>
-          {fetching ? "更新中..." : "更新"}
-        </button>
+        <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>{extras}</span>
+        <Button primary small disabled={fetching} onClick={onRefresh} label={fetching ? "更新中..." : "更新"} />
         {info.clusterOcid && info.region && (
           <ConsoleButton type="cluster" ocid={info.clusterOcid} region={info.region} />
         )}

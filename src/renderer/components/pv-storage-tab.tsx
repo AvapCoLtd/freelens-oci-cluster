@@ -3,7 +3,7 @@ import { observer } from "mobx-react";
 import type { OciConsoleResourceType } from "../match/console-url";
 import { getCsiSource, resolvePvStorage } from "../match/pv-storage";
 import { sortRows } from "../match/sort-rows";
-import type { ClusterOciData } from "../oci/fetch";
+import type { ClusterOciData } from "../sdk/fetch";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -20,6 +20,16 @@ interface StorageResolution {
   ocid?: string;
   consoleType?: OciConsoleResourceType;
   kindLabel: string;
+  backupLabel: string;
+  backupPolicyId?: string;
+  backupConsoleType?: OciConsoleResourceType;
+}
+
+// バックアップポリシー名の表示(未割当="なし"は保護されていないボリュームの検出材料)。
+function backupPolicyLabel(policy: ClusterOciData["volumeBackupPolicies"][string] | undefined): string {
+  if (!policy) return "取得中...";
+  if (!policy.ok) return "-";
+  return policy.data.policyName ?? "なし";
 }
 
 function resolveStorage(
@@ -30,37 +40,55 @@ function resolveStorage(
   const resolution = resolvePvStorage(driver, volumeHandle);
   if (resolution.kind === "block_volume" && resolution.ocid) {
     const ocid = resolution.ocid;
+    const backup = data.volumeBackupPolicies[ocid];
+    const backupLabel = backupPolicyLabel(backup);
+    const backupPolicyId = backup?.ok ? backup.data.policyId : undefined;
     if (!data.volumes.ok) {
-      return { displayName: "-", kindLabel: "Volume", ocid, consoleType: "volume" };
+      return {
+        displayName: "-",
+        kindLabel: "Volume",
+        ocid,
+        consoleType: "volume",
+        backupLabel,
+        backupPolicyId,
+        backupConsoleType: "volume-backup-policy",
+      };
     }
     const volume = data.volumes.data.find((v) => v.id === ocid);
     return {
-      displayName: volume?.["display-name"] ?? "-",
-      lifecycleState: volume?.["lifecycle-state"],
-      sizeGb: volume?.["size-in-gbs"],
+      displayName: volume?.displayName ?? "-",
+      lifecycleState: volume?.lifecycleState,
+      sizeGb: volume?.sizeInGBs,
       ocid,
       consoleType: "volume",
       kindLabel: "Volume",
+      backupLabel,
+      backupPolicyId,
+      backupConsoleType: "volume-backup-policy",
     };
   }
   if (resolution.kind === "file_system" && resolution.ocid) {
     const ocid = resolution.ocid;
     const fsResult = data.fileSystems[ocid];
     if (!fsResult?.ok) {
-      return { displayName: "-", kindLabel: "FSS", ocid, consoleType: "filesystem" };
+      return { displayName: "-", kindLabel: "FSS", ocid, consoleType: "filesystem", backupLabel: "取得中..." };
     }
+    const policyId = fsResult.data.filesystemSnapshotPolicyId;
     return {
-      displayName: fsResult.data["display-name"] ?? "-",
-      lifecycleState: fsResult.data["lifecycle-state"],
+      displayName: fsResult.data.displayName ?? "-",
+      lifecycleState: fsResult.data.lifecycleState,
       ocid,
       consoleType: "filesystem",
       kindLabel: "FSS",
+      backupLabel: policyId ? backupPolicyLabel(data.fssSnapshotPolicies[policyId]) : "なし",
+      backupPolicyId: policyId,
+      backupConsoleType: "fss-snapshot-policy",
     };
   }
-  return { displayName: "-", kindLabel: "未対応" };
+  return { displayName: "-", kindLabel: "未対応", backupLabel: "-" };
 }
 
-type PvColumn = "pv" | "pvc" | "entity" | "kind" | "size" | "lifecycle";
+type PvColumn = "pv" | "pvc" | "entity" | "kind" | "size" | "backup" | "lifecycle";
 
 interface PvRow {
   key: string;
@@ -75,6 +103,7 @@ const SORT_VALUE: Record<PvColumn, (row: PvRow) => string | number | undefined> 
   entity: (row) => row.storage.displayName,
   kind: (row) => row.storage.kindLabel,
   size: (row) => row.storage.sizeGb,
+  backup: (row) => row.storage.backupLabel,
   lifecycle: (row) => row.storage.lifecycleState,
 };
 
@@ -128,6 +157,9 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
             <SortableHeaderCell column="size" sort={sort} onSort={toggleSort}>
               サイズ(GB)
             </SortableHeaderCell>
+            <SortableHeaderCell column="backup" sort={sort} onSort={toggleSort}>
+              バックアップ
+            </SortableHeaderCell>
             <SortableHeaderCell column="lifecycle" sort={sort} onSort={toggleSort}>
               lifecycle-state
             </SortableHeaderCell>
@@ -143,7 +175,7 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
                 <tr key={row.key} style={UNMATCHED_ROW_STYLE}>
                   <td style={TD_STYLE}>{row.pvName}</td>
                   <td style={TD_STYLE}>{row.pvcLabel}</td>
-                  <td style={TD_STYLE} colSpan={5}>
+                  <td style={TD_STYLE} colSpan={6}>
                     未対応(対応する Block Volume / FSS が見つかりません)
                   </td>
                 </tr>
@@ -156,6 +188,14 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
                 <td style={TD_STYLE}>{storage.displayName}</td>
                 <td style={TD_STYLE}>{storage.kindLabel}</td>
                 <td style={TD_STYLE}>{storage.kindLabel === "Volume" ? (storage.sizeGb ?? "-") : "-"}</td>
+                <td style={TD_STYLE}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    {storage.backupLabel}
+                    {storage.backupPolicyId && storage.backupConsoleType && region && (
+                      <ConsoleButton type={storage.backupConsoleType} ocid={storage.backupPolicyId} region={region} />
+                    )}
+                  </span>
+                </td>
                 <td style={TD_STYLE}>
                   <LifecycleBadge state={storage.lifecycleState} />
                 </td>
