@@ -1,6 +1,11 @@
 # freelens-oci-cluster
 
+![License](https://img.shields.io/github/license/AvapCoLtd/freelens-oci-cluster)
+![Release](https://img.shields.io/github/v/release/AvapCoLtd/freelens-oci-cluster)
+
 See the OCI resources backing your open cluster, right in FreeLens.
+
+![Network page: LB/NLB row expanded, showing a CRITICAL backend health status](docs/images/network-lb-critical.png)
 
 [日本語](README.md)
 

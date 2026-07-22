@@ -1,6 +1,11 @@
 # freelens-oci-cluster
 
+![License](https://img.shields.io/github/license/AvapCoLtd/freelens-oci-cluster)
+![Release](https://img.shields.io/github/v/release/AvapCoLtd/freelens-oci-cluster)
+
 開いているクラスタの基盤 OCI リソースを、FreeLens 上で確認できるようにする。
+
+![ネットワークページ: LB/NLB 行を展開し、backend health が CRITICAL と表示された状態](docs/images/network-lb-critical.png)
 
 [English](README.en.md)
 
