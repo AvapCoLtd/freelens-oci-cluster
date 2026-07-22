@@ -33,6 +33,12 @@ make pack     # .tgz へパック
 make clean    # node_modules/out/*.tgz/.pnpm-store を削除
 ```
 
+### 初回セットアップ
+
+新しい環境でこのリポジトリを開発する場合、`make deploy` の前に一度、[README](README.md#インストール) の手順(`.tgz` をFreeLensのExtensions画面へドラッグ&ドロップ)で拡張機能をインストールしておくこと。まだリリースされていない変更を試したいだけなら、`make pack` でローカルビルドした `.tgz` でも構わない。
+
+`make deploy` は既にインストール済みの拡張機能を更新する用途のみを想定しており、一度もインストールしていない状態で実行すると反映されないことがある。
+
 ## リリース手順
 
 1. `package.json` の `version` をリリースしたい値に上げ、コミット
