@@ -32,7 +32,8 @@ const ExtensionStoreBase = Common.Store.ExtensionStore as unknown as new (params
 /**
  * 設計 Decision #2/#16: 認証情報コマンド文字列をFreeLensの拡張向け永続化機構(ExtensionStore)で保存する。
  * 秘密そのもの(鍵・トークン・認証JSON)はここに入れてはならない(設計 Decision #3)。
- * loadExtension(extension)は拡張のonActivateから一度だけ呼ぶ(Common.Store.ExtensionStoreの利用規約)。
+ * loadExtension(extension)はmain/renderer両方のonActivateから一度ずつ呼ぶ
+ * (mainを欠くとフレーム間同期が壊れ旧値がファイルへ書き戻る。詳細: docs/extension-api.md)。
  */
 export class OciPreferencesStore extends ExtensionStoreBase {
   authCommand = "";

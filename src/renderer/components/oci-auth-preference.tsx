@@ -1,6 +1,6 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
-import { ociPreferencesStore } from "../store/oci-preferences-store";
+import { ociPreferencesStore } from "../../common/store/oci-preferences-store";
 
 // appPreferences登録のInput/Hintはregistrationからprops無しで描画される(ExtensionPreferenceBlock参照)。
 export const OciAuthCommandInput = observer(function OciAuthCommandInput() {

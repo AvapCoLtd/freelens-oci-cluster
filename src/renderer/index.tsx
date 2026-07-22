@@ -1,5 +1,6 @@
 import { Renderer } from "@freelensapp/extensions";
 import { reaction } from "mobx";
+import { ociPreferencesStore } from "../common/store/oci-preferences-store";
 import {
   OciAuthCommandHint,
   OciAuthCommandInput,
@@ -11,7 +12,6 @@ import { OciNodesPage } from "./pages/oci-nodes-page";
 import { OciPvStoragePage } from "./pages/oci-pv-storage-page";
 import { OciServiceLbPage } from "./pages/oci-service-lb-page";
 import { ociClusterStore } from "./store/oci-cluster-store";
-import { ociPreferencesStore } from "./store/oci-preferences-store";
 
 export default class OciClusterRenderer extends Renderer.LensExtension {
   clusterPages = [

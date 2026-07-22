@@ -1,8 +1,8 @@
 import { observer } from "mobx-react";
 import * as React from "react";
+import { normalizePollingInterval, ociPreferencesStore } from "../../common/store/oci-preferences-store";
 import type { OciPage } from "../match/page-sections";
 import { ociClusterStore } from "../store/oci-cluster-store";
-import { normalizePollingInterval, ociPreferencesStore } from "../store/oci-preferences-store";
 
 const LABEL_STYLE: React.CSSProperties = {
   display: "flex",

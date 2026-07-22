@@ -67,6 +67,10 @@ FreeLens は OpenLens の fork。
 - `Renderer.K8sApi` の KubeObjectStore を自前ページから使う場合、namespaced リソースの `loadAll()` は FreeLens 上部の名前空間フィルタ選択に従う（`contextNamespaces` 既定）。
   全件が要るなら `namespaceStore` から全名前空間を取り `loadAll({ namespaces })` で明示する。
   cluster-scoped リソース（Node / PV 等）はこの影響を受けない（実機で遭遇）。
+- `Common.Store.ExtensionStore` は main/renderer 両方の `onActivate` で `loadExtension` する。
+  main/renderer 両方から使う store は `src/common/store/` に置く（renderer 専用 store は `src/renderer/store/`）。
+  store-sync IPC は renderer→`store-sync-main:<path>`→main が受けて `store-sync-renderer:<path>` で全フレームへ再配信する中継構造のため、renderer だけだと root frame（Preferences）の変更が cluster frame へ届かない。
+  さらに各フレームの persist reaction は自分のメモリ状態でファイルを直接書くので、cluster frame 側の store 変化（polling toggle 等）が旧値でファイルを上書きし、UI で保存したはずの設定が消える（実機で遭遇、v1.10.3 core の `create-persistent-storage` 実装で確認）。
 - `clusterPages[].components.Page` に `observer()` 済みコンポーネントを渡さない。
   ホスト側 (`extension-route-registrator`) が再度 `observer()` を適用するため mobx-react-lite が throw し、自拡張の登録中断に加え他拡張のサイドバー項目まで消える（v1.8.0〜1.10.3 の core 実装で確認、実機で遭遇）。
   ページ内部の子コンポーネントの `observer()` は問題ない。
