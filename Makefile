@@ -6,6 +6,8 @@ CONTAINER_STORE_DIR := /work/.pnpm-store
 # --user を外すと bind mount 出力(node_modules/, out/ 等)が root 所有になる。
 # HOME=/tmp を外すと host uid が /etc/passwd 未登録で pnpm/npm の書き込み先が無くなる。
 DOCKER_RUN := docker run --rm --user $(shell id -u):$(shell id -g) -e HOME=/tmp -v $(CURDIR):/work -w /work $(IMAGE)
+# lockfile が最新ならそのまま、古ければ更新込みで再インストール。
+PNPM_I := (pnpm i --store-dir $(CONTAINER_STORE_DIR) --frozen-lockfile || pnpm i --store-dir $(CONTAINER_STORE_DIR))
 
 .DEFAULT_GOAL := help
 .PHONY: help docker-image build build-mock pack deploy deploy-mock tag clean lint fmt test
@@ -18,7 +20,7 @@ docker-image: ## ビルダーイメージをビルド(未存在時のみ)
 
 build: docker-image ## 依存関係インストール+ビルド
 	@mkdir -p .pnpm-store
-	$(DOCKER_RUN) sh -c "(pnpm i --store-dir $(CONTAINER_STORE_DIR) --frozen-lockfile || pnpm i --store-dir $(CONTAINER_STORE_DIR)) && pnpm build"
+	$(DOCKER_RUN) sh -c "$(PNPM_I) && pnpm build"
 
 pack: build ## .tgz にパック
 	$(DOCKER_RUN) pnpm pack
@@ -27,22 +29,21 @@ pack: build ## .tgz にパック
 # README用スクリーンショット撮影専用(mock/oci-cluster-store.mock.tsが無いと通常ビルドと同じ結果になる)。
 build-mock: docker-image ## モックデータでビルド(スクリーンショット撮影用)
 	@mkdir -p .pnpm-store
-	$(DOCKER_RUN) sh -c "(pnpm i --store-dir $(CONTAINER_STORE_DIR) --frozen-lockfile || pnpm i --store-dir $(CONTAINER_STORE_DIR)) && MOCK=1 pnpm build"
+	$(DOCKER_RUN) sh -c "$(PNPM_I) && MOCK=1 pnpm build"
 
+deploy: BUILD_TAG := dev
 deploy: build ## $(FREELENS_EXT_DIR) へ配置(配置先 package.json のみ dev build metadata 付与)
-	@test -n "$(FREELENS_EXT_DIR)" || { echo "FREELENS_EXT_DIR is not set (set it in .env, or: make deploy FREELENS_EXT_DIR=/path/to/.freelens/extensions)"; exit 1; }
-	mkdir -p "$(FREELENS_EXT_DIR)/freelens-oci-cluster"
-	@jq --indent 2 --arg dev "dev.$$(date +%s)" '.version |= . + "+" + $$dev' package.json > "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json"
-	@echo "== freelens-oci-cluster v$$(jq -r .version "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json") =="
-	# cp -r は上書きのみで削除しないため、先に rm -rf しないと構成変更時に古いファイルが残る。
-	rm -rf "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
-	cp -r out "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
 
+deploy-mock: BUILD_TAG := mock
+deploy-mock: LABEL := (MOCK)
 deploy-mock: build-mock ## モックビルドを $(FREELENS_EXT_DIR) へ配置(スクリーンショット撮影用)
-	@test -n "$(FREELENS_EXT_DIR)" || { echo "FREELENS_EXT_DIR is not set (set it in .env, or: make deploy-mock FREELENS_EXT_DIR=/path/to/.freelens/extensions)"; exit 1; }
+
+deploy deploy-mock:
+	@test -n "$(FREELENS_EXT_DIR)" || { echo "FREELENS_EXT_DIR is not set (set it in .env, or: make $@ FREELENS_EXT_DIR=/path/to/.freelens/extensions)"; exit 1; }
 	mkdir -p "$(FREELENS_EXT_DIR)/freelens-oci-cluster"
-	@jq --indent 2 --arg dev "mock.$$(date +%s)" '.version |= . + "+" + $$dev' package.json > "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json"
-	@echo "== freelens-oci-cluster v$$(jq -r .version "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json") (MOCK) =="
+	@jq --indent 2 --arg dev "$(BUILD_TAG).$$(date +%s)" '.version |= . + "+" + $$dev' package.json > "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json"
+	@echo "== freelens-oci-cluster v$$(jq -r .version "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json")$(if $(LABEL), $(LABEL)) =="
+	# cp -r は上書きのみで削除しないため、先に rm -rf しないと構成変更時に古いファイルが残る。
 	rm -rf "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
 	cp -r out "$(FREELENS_EXT_DIR)/freelens-oci-cluster/out"
 
@@ -60,12 +61,12 @@ clean: ## node_modules/out/*.tgz/.pnpm-store を削除
 
 lint: docker-image ## Biome lint
 	@mkdir -p .pnpm-store
-	$(DOCKER_RUN) sh -c "(pnpm i --store-dir $(CONTAINER_STORE_DIR) --frozen-lockfile || pnpm i --store-dir $(CONTAINER_STORE_DIR)) && pnpm exec biome check ."
+	$(DOCKER_RUN) sh -c "$(PNPM_I) && pnpm exec biome check ."
 
 fmt: docker-image ## Biome format (--write)
 	@mkdir -p .pnpm-store
-	$(DOCKER_RUN) sh -c "(pnpm i --store-dir $(CONTAINER_STORE_DIR) --frozen-lockfile || pnpm i --store-dir $(CONTAINER_STORE_DIR)) && pnpm exec biome check --write ."
+	$(DOCKER_RUN) sh -c "$(PNPM_I) && pnpm exec biome check --write ."
 
 test: docker-image ## vitest テストを実行
 	@mkdir -p .pnpm-store
-	$(DOCKER_RUN) sh -c "(pnpm i --store-dir $(CONTAINER_STORE_DIR) --frozen-lockfile || pnpm i --store-dir $(CONTAINER_STORE_DIR)) && pnpm test"
+	$(DOCKER_RUN) sh -c "$(PNPM_I) && pnpm test"
