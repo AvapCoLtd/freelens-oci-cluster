@@ -47,7 +47,7 @@ FreeLens Preferences has an "OCI" section with an "OCI command" field.
 - It can include extra arguments, e.g. `oci --profile FOO`; the string is split on whitespace into command arguments
 - Changes take effect on the next data fetch (the refresh button, or reselecting the cluster)
 
-Development: see [CONTRIBUTING.md](CONTRIBUTING.md).
+Development: see [CONTRIBUTING.md](CONTRIBUTING.en.md).
 
 ## Links
 

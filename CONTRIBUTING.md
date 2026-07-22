@@ -1,47 +1,48 @@
+[English](CONTRIBUTING.en.md)
+
 # Contributing
 
-## Environment setup
+## 環境構築
 
-`make build` / `make deploy` etc. run fully inside a Docker container.
-The host only needs Docker and `jq`.
+`make build` / `make deploy` 等はすべて Docker コンテナ内で完結する。
+ホストに必要なのは Docker と `jq` のみ。
 
-Paths that differ per contributor, such as the local FreeLens extensions directory, go in a `.env` file at the repo root (gitignored).
+コントリビューターごとに異なるパス(ローカルの FreeLens 拡張機能ディレクトリ等)は、リポジトリルートの `.env` ファイル(gitignore対象)に置く。
 
 ```sh
-# Deploy target for `make deploy` (the FreeLens extensions directory).
-# Without this, `make deploy` stops with an error.
-# Example (operating a native Windows FreeLens from WSL):
+# `make deploy` のデプロイ先(FreeLens拡張機能ディレクトリ)。
+# 未設定だと `make deploy` はエラーで停止する。
+# 例(WSLからネイティブWindows版FreeLensを操作する場合):
 #   /mnt/c/Users/<user>/.freelens/extensions
 FREELENS_EXT_DIR=
 ```
 
-Values can also be overridden per invocation with `make <target> VAR=value`.
+`make <target> VAR=value` で実行時に個別上書きも可能。
 
-## Build, test & deploy
+## ビルド・テスト・デプロイ
 
-The build is fully containerized; pnpm, node and electron are self-contained inside the build image.
+ビルドは完全にコンテナ化されており、pnpm・node・electronはビルドイメージ内に自己完結している。
 
 ```sh
-make build    # install dependencies + build
-make deploy   # build + deploy to FREELENS_EXT_DIR
-make test     # run the vitest suite
+make build    # 依存関係インストール + ビルド
+make deploy   # ビルド + FREELENS_EXT_DIR へデプロイ
+make test     # vitest スイート実行
 make lint     # Biome lint
 make fmt      # Biome format (--write)
-make pack     # pack into a .tgz
-make clean    # remove node_modules/out/*.tgz/.pnpm-store
+make pack     # .tgz へパック
+make clean    # node_modules/out/*.tgz/.pnpm-store を削除
 ```
 
-## Release process
+## リリース手順
 
-1. Bump `version` in `package.json` to the value you want to release, and commit it
-2. Run `make tag`.
-   It creates and pushes the tag `vX.Y.Z` from the version in `package.json` (it refuses to run if that tag already exists)
-3. GitLab CI picks up the tag and runs the following.
-   - Builds and packs the extension into a `.tgz` (`make pack`) inside Docker
-   - Uploads the `.tgz` and its `.sha256` to the GitLab Generic Package Registry
-   - Creates a GitLab Release with those files attached
-   - Mirrors the repository to GitHub
-   - Creates a GitHub Release with the `.tgz` and `.sha256` attached
+1. `package.json` の `version` をリリースしたい値に上げ、コミット
+2. `make tag` を実行。`package.json` のバージョンから `vX.Y.Z` タグを作成しpushする(既に同名タグがあれば拒否される)
+3. GitLab CIがタグを検知し、以下を実行
+   - Docker内で拡張機能をビルドし `.tgz` へパック(`make pack`)
+   - `.tgz` とその `.sha256` を GitLab Generic Package Registry へアップロード
+   - それらのファイルを添付した GitLab Release を作成
+   - リポジトリをGitHubへミラー
+   - `.tgz` と `.sha256` を添付した GitHub Release を作成
 
-The GitHub mirror step only runs when the CI variables `GH_APP_ID` / `GH_APP_PRIVATE_KEY` are configured on the project.
-When they are, every push to `master` and every tag is mirrored to GitHub automatically; without them, GitLab remains the sole source and the GitHub-facing jobs are skipped.
+GitHubミラー処理は、プロジェクトにCI変数 `GH_APP_ID` / `GH_APP_PRIVATE_KEY` が設定されている場合のみ実行される。
+設定済みなら `master` へのpushとタグ作成のたびに自動でGitHubへミラーされる。未設定ならGitLabのみが正とされ、GitHub関連ジョブはスキップされる。
