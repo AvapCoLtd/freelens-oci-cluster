@@ -4,3 +4,4 @@ out/
 .pnpm-store/
 .env
 mock/
+tsconfig.tsbuildinfo
