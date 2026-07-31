@@ -1,0 +1,67 @@
+{
+  "data": {
+    "items": [
+      {
+        "additional-details": {},
+        "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+        "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+        "defined-tags": {
+          "Oracle-Tags": {
+            "CreatedBy": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001",
+            "CreatedOn": "2024-10-15T17:46:06.922Z"
+          }
+        },
+        "display-name": "publicip20241015174607",
+        "freeform-tags": {},
+        "identifier": "ocid1.publicip.oc1.ap-tokyo-1.aaaaexample0001",
+        "identity-context": {},
+        "lifecycle-state": "ASSIGNED",
+        "resource-type": "PublicIp",
+        "search-context": null,
+        "system-tags": {},
+        "time-created": "2024-10-15T17:46:07.225000+00:00"
+      },
+      {
+        "additional-details": {},
+        "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+        "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+        "defined-tags": {
+          "Oracle-Tags": {
+            "CreatedBy": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001",
+            "CreatedOn": "2024-10-15T17:46:06.922Z"
+          }
+        },
+        "display-name": "app-a/app-a-svc/00000000-0000-4000-8000-000000000001",
+        "freeform-tags": {},
+        "identifier": "ocid1.privateip.oc1.ap-tokyo-1.aaaaexample0001",
+        "identity-context": {},
+        "lifecycle-state": "AVAILABLE",
+        "resource-type": "PrivateIp",
+        "search-context": null,
+        "system-tags": {},
+        "time-created": "2024-10-15T17:46:07.089000+00:00"
+      },
+      {
+        "additional-details": {},
+        "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+        "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+        "defined-tags": {
+          "Oracle-Tags": {
+            "CreatedBy": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001",
+            "CreatedOn": "2024-10-15T17:46:06.922Z"
+          }
+        },
+        "display-name": "app-a/app-a-svc/00000000-0000-4000-8000-000000000001",
+        "freeform-tags": {},
+        "identifier": "ocid1.vnic.oc1.ap-tokyo-1.aaaaexample0001",
+        "identity-context": {},
+        "lifecycle-state": "AVAILABLE",
+        "resource-type": "Vnic",
+        "search-context": null,
+        "system-tags": {},
+        "time-created": "2024-10-15T17:46:07.089000+00:00"
+      }
+    ]
+  },
+  "opc-next-page": "EXAMPLEPAGETOKEN0001"
+}

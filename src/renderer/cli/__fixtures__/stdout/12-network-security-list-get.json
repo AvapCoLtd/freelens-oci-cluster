@@ -1,0 +1,132 @@
+{
+  "data": {
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2024-07-12T19:02:11.469Z"
+      }
+    },
+    "display-name": "securitylist20240712190211",
+    "egress-security-rules": [
+      {
+        "description": "Auto Created all-tcp",
+        "destination": "0.0.0.0/0",
+        "destination-type": "CIDR_BLOCK",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "6",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created all-udp",
+        "destination": "0.0.0.0/0",
+        "destination-type": "CIDR_BLOCK",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "17",
+        "tcp-options": null,
+        "udp-options": null
+      }
+    ],
+    "freeform-tags": {},
+    "id": "ocid1.securitylist.oc1.ap-tokyo-1.aaaaexample0001",
+    "ingress-security-rules": [
+      {
+        "description": "Auto Created from-lb-01-network",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "6",
+        "source": "10.0.10.96/28",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created same-network-udp",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "17",
+        "source": "10.0.10.80/28",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created pods-network-tcp",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "6",
+        "source": "10.0.0.0/16",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created endpoint-network",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "6",
+        "source": "10.0.10.64/28",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created same-network",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "6",
+        "source": "10.0.10.80/28",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created pods-network-udp",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "17",
+        "source": "10.0.0.0/16",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created services-network-udp",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "17",
+        "source": "10.0.0.0/16",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created endpoint-network-udp",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "17",
+        "source": "10.0.10.64/28",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      },
+      {
+        "description": "Auto Created services-network-tcp",
+        "icmp-options": null,
+        "is-stateless": false,
+        "protocol": "6",
+        "source": "10.0.0.0/16",
+        "source-type": "CIDR_BLOCK",
+        "tcp-options": null,
+        "udp-options": null
+      }
+    ],
+    "lifecycle-state": "AVAILABLE",
+    "time-created": "2024-07-12T19:02:11.499000+00:00",
+    "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0001"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

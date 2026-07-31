@@ -1,0 +1,12 @@
+{
+  "command": [
+    "bv",
+    "volume-backup-policy-assignment",
+    "get-volume-backup-policy-asset-assignment",
+    "--asset-id",
+    "ocid1.volume.oc1.ap-tokyo-1.aaaaexample0001"
+  ],
+  "exit-code": 0,
+  "stderr": "",
+  "stdout": ""
+}

@@ -1,10 +1,10 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
+import type { ClusterOciData } from "../fetch/fetch";
 import { nodePoolNameOfInstance } from "../match/node-pool";
 import { parseProviderId } from "../match/provider-id";
 import { sortRows } from "../match/sort-rows";
-import type { ClusterOciData } from "../sdk/fetch";
-import type { OciInstance } from "../sdk/types";
+import type { OciInstance } from "../oci/types";
 import { ConsoleButton } from "./console-button";
 import { EmptyState, LOADING_LABEL } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -35,12 +35,12 @@ interface NodeRow {
 
 const SORT_VALUE: Record<NodeColumn, (row: NodeRow) => string | number | undefined> = {
   node: (row) => row.node.getName(),
-  instance: (row) => row.instance?.displayName,
+  instance: (row) => row.instance?.["display-name"],
   pool: (row) => row.poolName,
   shape: (row) => row.instance?.shape,
   adFd: (row) =>
-    row.instance ? `${row.instance.availabilityDomain ?? ""} / ${row.instance.faultDomain ?? ""}` : undefined,
-  lifecycle: (row) => row.instance?.lifecycleState,
+    row.instance ? `${row.instance["availability-domain"] ?? ""} / ${row.instance["fault-domain"] ?? ""}` : undefined,
+  lifecycle: (row) => row.instance?.["lifecycle-state"],
   ready: (row) => (row.ready ? 1 : 0),
 };
 
@@ -113,14 +113,14 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
           {sortedRows.map(({ key, node, instance, poolName, ready }) => (
             <tr key={key}>
               <td style={TD_STYLE}>{node.getName()}</td>
-              <td style={TD_STYLE}>{instance?.displayName ?? "-"}</td>
+              <td style={TD_STYLE}>{instance?.["display-name"] ?? "-"}</td>
               <td style={TD_STYLE}>{poolName ?? "-"}</td>
               <td style={TD_STYLE}>{instance?.shape ?? "-"}</td>
               <td style={TD_STYLE}>
-                {instance ? `${instance.availabilityDomain ?? "-"} / ${instance.faultDomain ?? "-"}` : "-"}
+                {instance ? `${instance["availability-domain"] ?? "-"} / ${instance["fault-domain"] ?? "-"}` : "-"}
               </td>
               <td style={TD_STYLE}>
-                <LifecycleBadge state={instance?.lifecycleState} />
+                <LifecycleBadge state={instance?.["lifecycle-state"]} />
               </td>
               <td style={TD_STYLE}>
                 <ReadyBadge ready={ready} />

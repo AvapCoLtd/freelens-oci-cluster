@@ -5,10 +5,10 @@ import { LOADING_LABEL } from "../components/empty-state";
 import { FatalErrorGuidance, NonOkeGuidance } from "../components/error-guidance";
 import { OciHeader } from "../components/oci-header";
 import { PollingToggle } from "../components/polling-toggle";
+import type { ClusterOciData } from "../fetch/fetch";
 import { buildHeaderInfo } from "../match/header-info";
 import { extractRegionFromOcid } from "../match/ocid-region";
 import type { OciPage } from "../match/page-sections";
-import type { ClusterOciData } from "../sdk/fetch";
 import { ociClusterStore } from "../store/oci-cluster-store";
 import { useOciPageState } from "./use-oci-page-state";
 

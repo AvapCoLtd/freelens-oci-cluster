@@ -1,5 +1,5 @@
-import type { OciResult } from "../sdk/result";
-import type { OciNodePoolSummary } from "../sdk/types";
+import type { OciResult } from "../oci/result";
+import type { OciNodePoolSummary } from "../oci/types";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { LifecycleBadge } from "./status-badge";
@@ -29,11 +29,11 @@ export function NodePoolSummary({ nodePools }: { nodePools: OciResult<OciNodePoo
         {nodePools.data.map((pool) => (
           <tr key={pool.id}>
             <td style={TD_STYLE}>{pool.name ?? "-"}</td>
-            <td style={TD_STYLE}>{pool.nodeShape ?? "-"}</td>
-            <td style={TD_STYLE}>{pool.kubernetesVersion ?? "-"}</td>
-            <td style={TD_STYLE}>{pool.nodeConfigDetails?.size ?? "-"}</td>
+            <td style={TD_STYLE}>{pool["node-shape"] ?? "-"}</td>
+            <td style={TD_STYLE}>{pool["kubernetes-version"] ?? "-"}</td>
+            <td style={TD_STYLE}>{pool["node-config-details"]?.size ?? "-"}</td>
             <td style={TD_STYLE}>
-              <LifecycleBadge state={pool.lifecycleState} />
+              <LifecycleBadge state={pool["lifecycle-state"]} />
             </td>
           </tr>
         ))}

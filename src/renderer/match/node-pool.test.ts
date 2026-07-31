@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { OciInstance, OciNodePoolSummary } from "../sdk/types";
+import type { OciInstance, OciNodePoolSummary } from "../oci/types";
 import { nodePoolIdOfInstance, nodePoolNameOfInstance } from "./node-pool";
 
 const POOL_ID = "ocid1.nodepool.oc1.ap-tokyo-1.aaaaexample";
@@ -7,7 +7,7 @@ const POOL_ID = "ocid1.nodepool.oc1.ap-tokyo-1.aaaaexample";
 function instanceWithCreatedBy(createdBy: unknown): OciInstance {
   return {
     id: "ocid1.instance.oc1.ap-tokyo-1.aaaaexample",
-    definedTags: { "Oracle-Tags": { CreatedBy: createdBy } },
+    "defined-tags": { "Oracle-Tags": { CreatedBy: createdBy } },
   } as unknown as OciInstance;
 }
 

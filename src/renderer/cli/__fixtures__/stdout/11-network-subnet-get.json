@@ -1,0 +1,37 @@
+{
+  "data": {
+    "availability-domain": null,
+    "cidr-block": "10.0.10.80/28",
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2024-07-12T19:02:11.896Z"
+      }
+    },
+    "dhcp-options-id": "ocid1.dhcpoptions.oc1.ap-tokyo-1.aaaaexample0001",
+    "display-name": "example-k8s-node-subnet",
+    "dns-label": null,
+    "freeform-tags": {},
+    "id": "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0001",
+    "ipv4-cidr-blocks": [
+      "10.0.10.80/28"
+    ],
+    "ipv6-cidr-block": null,
+    "ipv6-cidr-blocks": null,
+    "ipv6-virtual-router-ip": null,
+    "lifecycle-state": "AVAILABLE",
+    "prohibit-internet-ingress": true,
+    "prohibit-public-ip-on-vnic": true,
+    "route-table-id": "ocid1.routetable.oc1.ap-tokyo-1.aaaaexample0001",
+    "security-list-ids": [
+      "ocid1.securitylist.oc1.ap-tokyo-1.aaaaexample0001"
+    ],
+    "subnet-domain-name": null,
+    "time-created": "2024-07-12T19:02:12.761000+00:00",
+    "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0001",
+    "virtual-router-ip": "10.0.10.81",
+    "virtual-router-mac": "00:00:17:00:00:01"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

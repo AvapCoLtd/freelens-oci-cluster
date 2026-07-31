@@ -1,0 +1,44 @@
+{
+  "data": {
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2024-07-12T19:01:14.483Z"
+      }
+    },
+    "display-name": "example-k8s-node-route",
+    "freeform-tags": {},
+    "id": "ocid1.routetable.oc1.ap-tokyo-1.aaaaexample0001",
+    "lifecycle-state": "AVAILABLE",
+    "route-rules": [
+      {
+        "cidr-block": null,
+        "description": "Terraform created rule",
+        "destination": "0.0.0.0/0",
+        "destination-type": "CIDR_BLOCK",
+        "network-entity-id": "ocid1.natgateway.oc1.ap-tokyo-1.aaaaexample0001",
+        "route-type": "STATIC"
+      },
+      {
+        "cidr-block": null,
+        "description": "Terraform created rule",
+        "destination": "all-nrt-services-in-oracle-services-network",
+        "destination-type": "SERVICE_CIDR_BLOCK",
+        "network-entity-id": "ocid1.servicegateway.oc1.ap-tokyo-1.aaaaexample0001",
+        "route-type": "STATIC"
+      },
+      {
+        "cidr-block": null,
+        "description": "Terraform created rule",
+        "destination": "10.9.100.0/24",
+        "destination-type": "CIDR_BLOCK",
+        "network-entity-id": "ocid1.drg.oc1.ap-tokyo-1.aaaaexample0001",
+        "route-type": "STATIC"
+      }
+    ],
+    "time-created": "2024-07-12T19:01:14.523000+00:00",
+    "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0001"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

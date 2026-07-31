@@ -1,9 +1,9 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
+import type { ClusterOciData } from "../fetch/fetch";
 import type { LoadBalancerCandidate, ServiceLbMatchInput } from "../match/service-lb";
 import { matchServicesToLoadBalancers } from "../match/service-lb";
 import { sortRows } from "../match/sort-rows";
-import type { ClusterOciData } from "../sdk/fetch";
 import { ConsoleButton } from "./console-button";
 import { EmptyState, LOADING_LABEL } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -23,12 +23,12 @@ function buildLbInfo(data: ClusterOciData): Map<string, LbInfo> {
   const info = new Map<string, LbInfo>();
   if (data.nlbs.ok) {
     for (const nlb of data.nlbs.data) {
-      info.set(nlb.id, { displayName: nlb.displayName, lifecycleState: nlb.lifecycleState, kind: "nlb" });
+      info.set(nlb.id, { displayName: nlb["display-name"], lifecycleState: nlb["lifecycle-state"], kind: "nlb" });
     }
   }
   if (data.lbs.ok) {
     for (const lb of data.lbs.data) {
-      info.set(lb.id, { displayName: lb.displayName, lifecycleState: lb.lifecycleState, kind: "lb" });
+      info.set(lb.id, { displayName: lb["display-name"], lifecycleState: lb["lifecycle-state"], kind: "lb" });
     }
   }
   return info;
@@ -38,13 +38,13 @@ function buildCandidates(data: ClusterOciData): LoadBalancerCandidate[] {
   const candidates: LoadBalancerCandidate[] = [];
   if (data.nlbs.ok) {
     for (const nlb of data.nlbs.data) {
-      const ips = (nlb.ipAddresses ?? []).map((ip) => ip.ipAddress).filter((ip): ip is string => !!ip);
+      const ips = (nlb["ip-addresses"] ?? []).map((ip) => ip["ip-address"]).filter((ip): ip is string => !!ip);
       candidates.push({ ocid: nlb.id, kind: "nlb", ips });
     }
   }
   if (data.lbs.ok) {
     for (const lb of data.lbs.data) {
-      const ips = (lb.ipAddresses ?? []).map((ip) => ip.ipAddress).filter((ip): ip is string => !!ip);
+      const ips = (lb["ip-addresses"] ?? []).map((ip) => ip["ip-address"]).filter((ip): ip is string => !!ip);
       candidates.push({ ocid: lb.id, kind: "lb", ips });
     }
   }

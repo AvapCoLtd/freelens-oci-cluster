@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ClusterOciData } from "../sdk/fetch";
-import type { OciCluster } from "../sdk/types";
+import type { ClusterOciData } from "../fetch/fetch";
 import type { OciClusterViewState, ResolvedAnchor } from "../store/oci-cluster-store";
 import { buildHeaderInfo } from "./header-info";
 
@@ -55,8 +54,8 @@ describe("buildHeaderInfo", () => {
         data: {
           id: ANCHOR.clusterId,
           name: "my-cluster",
-          kubernetesVersion: "v1.29.1",
-          lifecycleState: "ACTIVE" as OciCluster["lifecycleState"],
+          "kubernetes-version": "v1.29.1",
+          "lifecycle-state": "ACTIVE",
         },
       },
     });

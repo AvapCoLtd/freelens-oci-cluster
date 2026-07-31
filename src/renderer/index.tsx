@@ -1,12 +1,13 @@
 import { Renderer } from "@freelensapp/extensions";
 import { reaction } from "mobx";
 import { ociPreferencesStore } from "../common/store/oci-preferences-store";
+import { ensureExpandableRowStyle, removeExpandableRowStyle } from "./components/expandable-row";
 import {
-  OciAuthCommandHint,
-  OciAuthCommandInput,
+  OciCommandHint,
+  OciCommandInput,
   OciPollingIntervalHint,
   OciPollingIntervalInput,
-} from "./components/oci-auth-preference";
+} from "./components/oci-preference";
 import { OciNetworkPage } from "./pages/oci-network-page";
 import { OciNodesPage } from "./pages/oci-nodes-page";
 import { OciPvStoragePage } from "./pages/oci-pv-storage-page";
@@ -65,11 +66,11 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
 
   appPreferences = [
     {
-      id: "oci-cluster-command",
-      title: "OCI",
+      id: "oci-cluster-cli-command",
+      title: "OCI: oci command",
       components: {
-        Hint: OciAuthCommandHint,
-        Input: OciAuthCommandInput,
+        Hint: OciCommandHint,
+        Input: OciCommandInput,
       },
     },
     {
@@ -82,19 +83,22 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
     },
   ];
 
-  private stopSyncingAuthCommand?: () => void;
+  private stopSyncingOciCommand?: () => void;
 
   protected onActivate(): void {
+    ensureExpandableRowStyle();
     ociPreferencesStore.loadExtension(this);
     // 設定変更を都度反映するためreactionでociClusterStoreへ同期する。
-    this.stopSyncingAuthCommand = reaction(
-      () => ociPreferencesStore.authCommand,
-      (value) => ociClusterStore.setAuthCommand(value),
-      { fireImmediately: true },
+    this.stopSyncingOciCommand = reaction(
+      () => ociPreferencesStore.ociCliCommand,
+      (value) => ociClusterStore.setOciCliCommand(value),
+      // delayは打鍵途中の値が取得に流れるのを抑えるためのもの(取得中の値の差し替えまでは防げない)
+      { fireImmediately: true, delay: 500 },
     );
   }
 
   protected onDeactivate(): void {
-    this.stopSyncingAuthCommand?.();
+    this.stopSyncingOciCommand?.();
+    removeExpandableRowStyle();
   }
 }

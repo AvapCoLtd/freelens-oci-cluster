@@ -1,0 +1,171 @@
+{
+  "data": [
+    {
+      "backend-sets": {
+        "backend-dev-client-b": {
+          "backend-max-connections": null,
+          "backends": [
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.6.234",
+              "max-connections": null,
+              "name": "10.0.6.234:8101",
+              "offline": false,
+              "port": 8101,
+              "weight": 1
+            }
+          ],
+          "health-checker": {
+            "interval-in-millis": 10000,
+            "is-force-plain-text": null,
+            "port": 8101,
+            "protocol": "HTTP",
+            "response-body-regex": "",
+            "retries": 3,
+            "return-code": 200,
+            "timeout-in-millis": 3000,
+            "url-path": "/checkhealth"
+          },
+          "lb-cookie-session-persistence-configuration": null,
+          "name": "backend-dev-client-b",
+          "policy": "ROUND_ROBIN",
+          "session-persistence-configuration": null,
+          "ssl-configuration": null
+        }
+      },
+      "certificates": {},
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0002",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "default/user@example.com",
+          "CreatedOn": "2024-12-03T08:54:43.478Z"
+        }
+      },
+      "display-name": "client-a-staging-lb",
+      "freeform-tags": {},
+      "hostnames": {
+        "dev-client-b.client-a.example.org": {
+          "hostname": "dev-client-b.client-a.example.org",
+          "name": "dev-client-b.client-a.example.org"
+        },
+        "grafana.client-a.example.org": {
+          "hostname": "grafana.client-a.example.org",
+          "name": "grafana.client-a.example.org"
+        },
+        "pma.client-a.example.org": {
+          "hostname": "pma.client-a.example.org",
+          "name": "pma.client-a.example.org"
+        },
+        "stg-client-b.client-a.example.org": {
+          "hostname": "stg-client-b.client-a.example.org",
+          "name": "stg-client-b.client-a.example.org"
+        },
+        "stg-client-d-client-a.client-a.example.org": {
+          "hostname": "stg-client-d-client-a.client-a.example.org",
+          "name": "stg-client-d-client-a.client-a.example.org"
+        },
+        "stg-client-d-client-c.client-a.example.org": {
+          "hostname": "stg-client-d-client-c.client-a.example.org",
+          "name": "stg-client-d-client-c.client-a.example.org"
+        },
+        "stg-client-d-hotels.client-a.example.org": {
+          "hostname": "stg-client-d-hotels.client-a.example.org",
+          "name": "stg-client-d-hotels.client-a.example.org"
+        },
+        "stg-client-d-client-d-brand.client-a.example.org": {
+          "hostname": "stg-client-d-client-d-brand.client-a.example.org",
+          "name": "stg-client-d-client-d-brand.client-a.example.org"
+        }
+      },
+      "id": "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0003",
+      "ip-addresses": [
+        {
+          "ip-address": "203.0.113.6",
+          "is-public": true,
+          "reserved-ip": {
+            "id": "ocid1.publicip.oc1.ap-tokyo-1.aaaaexample0002"
+          }
+        }
+      ],
+      "ip-mode": "IPV4",
+      "is-delete-protection-enabled": null,
+      "is-private": false,
+      "is-request-id-enabled": null,
+      "lifecycle-state": "ACTIVE",
+      "listeners": {
+        "http-dev_client-b": {
+          "connection-configuration": {
+            "backend-tcp-proxy-protocol-options": null,
+            "backend-tcp-proxy-protocol-version": null,
+            "idle-timeout": 300
+          },
+          "default-backend-set-name": "backend-dev-client-b",
+          "hostname-names": [
+            "dev-client-b.client-a.example.org"
+          ],
+          "name": "http-dev_client-b",
+          "path-route-set-name": null,
+          "port": 80,
+          "protocol": "HTTP",
+          "routing-policy-name": null,
+          "rule-set-names": [
+            "redirect_dev_client-b"
+          ],
+          "ssl-configuration": null
+        },
+        "https-dev_client-b": {
+          "connection-configuration": {
+            "backend-tcp-proxy-protocol-options": null,
+            "backend-tcp-proxy-protocol-version": null,
+            "idle-timeout": 300
+          },
+          "default-backend-set-name": "backend-dev-client-b",
+          "hostname-names": [
+            "dev-client-b.client-a.example.org"
+          ],
+          "name": "https-dev_client-b",
+          "path-route-set-name": null,
+          "port": 443,
+          "protocol": "HTTP2",
+          "routing-policy-name": null,
+          "rule-set-names": [],
+          "ssl-configuration": {
+            "certificate-ids": [
+              "ocid1.certificate.oc1.ap-tokyo-1.aaaaexample0001"
+            ],
+            "certificate-name": null,
+            "cipher-suite-name": "oci-default-http2-ssl-cipher-suite-v1",
+            "has-session-resumption": false,
+            "protocols": [
+              "TLSv1.2"
+            ],
+            "server-order-preference": "ENABLED",
+            "trusted-certificate-authority-ids": [],
+            "verify-depth": 5,
+            "verify-peer-certificate": false
+          }
+        }
+      },
+      "network-security-group-ids": [
+        "ocid1.networksecuritygroup.oc1.ap-tokyo-1.aaaaexample0003"
+      ],
+      "path-route-sets": {},
+      "request-id-header": null,
+      "routing-policies": {},
+      "rule-sets": {},
+      "security-attributes": {},
+      "shape-details": {
+        "maximum-bandwidth-in-mbps": 100,
+        "minimum-bandwidth-in-mbps": 10
+      },
+      "shape-name": "flexible",
+      "ssl-cipher-suites": {},
+      "subnet-ids": [
+        "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0006"
+      ],
+      "system-tags": {},
+      "time-created": "2024-12-03T08:54:43.788000+00:00"
+    }
+  ]
+}

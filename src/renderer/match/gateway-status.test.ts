@@ -1,23 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { OciRouteTable } from "../sdk/types";
+import type { OciRouteTable } from "../oci/types";
 import { gatewayHealth, gatewayIdsOfRouteTables, isSupportedGatewayId } from "./gateway-status";
 
 describe("gatewayIdsOfRouteTables", () => {
   it("対応種別のゲートウェイOCIDを重複なしで集める", () => {
-    const rts = [
+    const rts: OciRouteTable[] = [
       {
-        routeRules: [
-          { destination: "0.0.0.0/0", networkEntityId: "ocid1.natgateway.oc1..n1" },
-          { destination: "10.0.0.0/8", networkEntityId: "ocid1.drg.oc1..d1" },
+        "route-rules": [
+          { destination: "0.0.0.0/0", "network-entity-id": "ocid1.natgateway.oc1..n1" },
+          { destination: "10.0.0.0/8", "network-entity-id": "ocid1.drg.oc1..d1" },
         ],
       },
       {
-        routeRules: [
-          { destination: "0.0.0.0/0", networkEntityId: "ocid1.natgateway.oc1..n1" },
-          { destination: "10.1.0.0/16", networkEntityId: "ocid1.privateip.oc1..p1" },
+        "route-rules": [
+          { destination: "0.0.0.0/0", "network-entity-id": "ocid1.natgateway.oc1..n1" },
+          { destination: "10.1.0.0/16", "network-entity-id": "ocid1.privateip.oc1..p1" },
         ],
       },
-    ] as unknown as OciRouteTable[];
+    ];
     expect(gatewayIdsOfRouteTables(rts).sort()).toEqual(["ocid1.drg.oc1..d1", "ocid1.natgateway.oc1..n1"]);
   });
 });

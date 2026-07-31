@@ -1,5 +1,5 @@
 import type * as React from "react";
-import type { OciErrorKind, OciRawErrorInfo } from "../sdk/result";
+import type { OciErrorKind, OciRawErrorInfo } from "../oci/result";
 import { Button } from "./freelens-ui";
 
 export interface OciErrorGuidance {
@@ -7,33 +7,38 @@ export interface OciErrorGuidance {
   body: string;
 }
 
-// 設計 Decision #15: 4分類(非OKEはこの外側で別途ガイダンス表示)ごとに対処方法を案内する。
+// 非OKEはこの外側で別途ガイダンス表示。
 export function describeOciError(kind: OciErrorKind): OciErrorGuidance {
   switch (kind) {
-    case "auth_missing":
+    case "command_launch_failed":
       return {
-        title: "OCI credentials not found",
+        title: "Could not start the oci command",
         body:
-          "~/.oci/config does not exist and no credentials command is configured. " +
-          "Set a credentials command under Preferences → OCI, or provide ~/.oci/config. " +
-          "See the plugin README's Prerequisites and Configuration sections for details.",
-      };
-    case "auth_command":
-      return {
-        title: "Credentials command execution failed",
-        body:
-          "Check the credentials command under Preferences → OCI and its output (JSON contract). " +
-          "The command's stdout is not shown here to avoid leaking credentials.",
+          "Check the oci command under Preferences → OCI: leave it blank to run `oci` from PATH, " +
+          "or set an oci-compatible command such as `wsl oci`. " +
+          "The details below show why the command could not be started.",
       };
     case "not_authenticated":
       return {
-        title: "OCI authentication expired",
-        body: "Re-authenticate in a terminal (e.g. `oci session authenticate`), then click Refresh.",
+        title: "The oci command is not authenticated",
+        body:
+          "The command ran but could not authenticate (no config file, unknown profile, or an expired session). " +
+          "Check the OCI configuration and session of the environment that runs it — for example run the same " +
+          "command in a terminal, or re-authenticate with `oci session authenticate` — then click Refresh.",
       };
     case "forbidden_or_not_found":
       return {
-        title: "OCI API call failed",
-        body: "Insufficient permissions or resource not found (404/403). Check the details below.",
+        title: "OCI command failed",
+        body:
+          "Insufficient permissions or resource not found (OCI reports both as 404). " +
+          "Check the details below for which resource was refused.",
+      };
+    case "command_incompatible":
+      return {
+        title: "The oci command rejected the arguments",
+        body:
+          "Check whether the compatible command under Preferences → OCI forwards its arguments as-is, " +
+          "or whether the oci CLI needs to be updated.",
       };
     case "internal":
       return {
@@ -47,7 +52,7 @@ export function describeOciError(kind: OciErrorKind): OciErrorGuidance {
       };
     default:
       return {
-        title: "OCI API call failed",
+        title: "OCI command failed",
         body: "Check the details below.",
       };
   }
@@ -64,7 +69,7 @@ const RAW_ERROR_STYLE: React.CSSProperties = {
 export function RawErrorDetails({ raw }: { raw: OciRawErrorInfo }) {
   return (
     <details style={RAW_ERROR_STYLE}>
-      <summary>Show raw error</summary>
+      <summary>Show details (exit code, stderr)</summary>
       <div>message: {raw.message}</div>
       {raw.statusCode !== undefined && <div>status: {raw.statusCode}</div>}
       {raw.serviceCode && <div>serviceCode: {raw.serviceCode}</div>}

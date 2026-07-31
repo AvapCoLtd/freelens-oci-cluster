@@ -1,0 +1,507 @@
+{
+  "data": {
+    "actions": [
+      {
+        "name": "CHECK",
+        "type": "CHECK"
+      },
+      {
+        "name": "ALLOW",
+        "type": "ALLOW"
+      },
+      {
+        "body": {
+          "text": "Access blocked by WAF",
+          "type": "STATIC_TEXT"
+        },
+        "code": 403,
+        "headers": [],
+        "name": "BLOCK",
+        "type": "RETURN_HTTP_RESPONSE"
+      },
+      {
+        "body": {
+          "text": "Temporary blocked by WAF",
+          "type": "STATIC_TEXT"
+        },
+        "code": 403,
+        "headers": [],
+        "name": "TEMPORARY_BLOCK",
+        "type": "RETURN_HTTP_RESPONSE"
+      }
+    ],
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0002",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "client-a/client-a+terraform@example.com",
+        "CreatedOn": "2024-11-28T08:59:01.574Z"
+      }
+    },
+    "display-name": "client-a-release-waf-policy",
+    "freeform-tags": {},
+    "id": "ocid1.webappfirewallpolicy.oc1.ap-tokyo-1.aaaaexample0001",
+    "lifecycle-details": null,
+    "lifecycle-state": "ACTIVE",
+    "request-access-control": {
+      "default-action-name": "ALLOW",
+      "rules": [
+        {
+          "action-name": "ALLOW",
+          "condition": "i_contains(['grafana.client-a.example.org','pma.client-a.example.org'], http.request.host)\n&& address_in(connection.source.address, ['203.0.113.7/32','203.0.113.8/32','203.0.113.9/32','203.0.113.10/32','203.0.113.11/32','203.0.113.12/32','203.0.113.13/32','203.0.113.14/32','203.0.113.15/32','203.0.113.16/32','203.0.113.17/32','203.0.113.18/32','203.0.113.19/32','203.0.113.20/32','203.0.113.21/32','203.0.113.22/32','203.0.113.23/32','203.0.113.24/32','203.0.113.25/32','203.0.113.26/32','203.0.113.27/32','203.0.113.28/32','203.0.113.29/32','203.0.113.30/32','203.0.113.31/32','203.0.113.32/32','203.0.113.33/32','203.0.113.34/32','203.0.113.35/32','203.0.113.36/32','203.0.113.37/32','203.0.113.38/32','203.0.113.39/32','203.0.113.40/32'])\n",
+          "condition-language": "JMESPATH",
+          "name": "developer_allow_host_rule",
+          "type": "ACCESS_CONTROL"
+        },
+        {
+          "action-name": "BLOCK",
+          "condition": "i_contains(['grafana.client-a.example.org','pma.client-a.example.org'], http.request.host)\n&& !address_in(connection.source.address, ['203.0.113.7/32','203.0.113.8/32','203.0.113.9/32','203.0.113.10/32','203.0.113.11/32','203.0.113.12/32','203.0.113.13/32','203.0.113.14/32','203.0.113.15/32','203.0.113.16/32','203.0.113.17/32','203.0.113.18/32','203.0.113.19/32','203.0.113.20/32','203.0.113.21/32','203.0.113.22/32','203.0.113.23/32','203.0.113.24/32','203.0.113.25/32','203.0.113.26/32','203.0.113.27/32','203.0.113.28/32','203.0.113.29/32','203.0.113.30/32','203.0.113.31/32','203.0.113.32/32','203.0.113.33/32','203.0.113.34/32','203.0.113.35/32','203.0.113.36/32','203.0.113.37/32','203.0.113.38/32','203.0.113.39/32','203.0.113.40/32'])\n",
+          "condition-language": "JMESPATH",
+          "name": "devopt_tool_url_protection",
+          "type": "ACCESS_CONTROL"
+        },
+        {
+          "action-name": "CHECK",
+          "condition": "!i_starts_with(http.request.url.path, '/wp') && !i_contains(['GET'], http.request.method)",
+          "condition-language": "JMESPATH",
+          "name": "block_none_get_dose_not_start_with_wp",
+          "type": "ACCESS_CONTROL"
+        },
+        {
+          "action-name": "BLOCK",
+          "condition": "i_ends_with(http.request.url.path, 'xmlrpc.php')",
+          "condition-language": "JMESPATH",
+          "name": "block_xmlrpc-php",
+          "type": "ACCESS_CONTROL"
+        },
+        {
+          "action-name": "BLOCK",
+          "condition": "i_ends_with(http.request.url.path, 'wp-login.php') && !address_in(connection.source.address, ['203.0.113.7/32','203.0.113.32/32','203.0.113.33/32','203.0.113.34/32'])",
+          "condition-language": "JMESPATH",
+          "name": "block_wp-login-php",
+          "type": "ACCESS_CONTROL"
+        },
+        {
+          "action-name": "BLOCK",
+          "condition": "i_ends_with(http.request.url.path, '/wp/login-client-a-wp')\n&& !address_in(connection.source.address, ['203.0.113.7/32','203.0.113.8/32','203.0.113.9/32','203.0.113.10/32','203.0.113.11/32','203.0.113.12/32','203.0.113.13/32','203.0.113.14/32','203.0.113.15/32','203.0.113.16/32','203.0.113.17/32','203.0.113.18/32','203.0.113.19/32','203.0.113.20/32','203.0.113.21/32','203.0.113.22/32','203.0.113.23/32','203.0.113.24/32','203.0.113.25/32','203.0.113.26/32','203.0.113.27/32','203.0.113.28/32','203.0.113.29/32','203.0.113.30/32','203.0.113.31/32','203.0.113.32/32','203.0.113.33/32','203.0.113.34/32','203.0.113.35/32','203.0.113.36/32','203.0.113.37/32','203.0.113.38/32','203.0.113.39/32','203.0.113.40/32'])\n",
+          "condition-language": "JMESPATH",
+          "name": "login-access-rule",
+          "type": "ACCESS_CONTROL"
+        }
+      ]
+    },
+    "request-protection": {
+      "body-inspection-size-limit-exceeded-action-name": null,
+      "body-inspection-size-limit-in-bytes": 8192,
+      "rules": [
+        {
+          "action-name": "CHECK",
+          "condition": null,
+          "condition-language": "JMESPATH",
+          "is-body-inspection-enabled": false,
+          "name": "CrossSiteScripting_XSS",
+          "protection-capabilities": [
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941380",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941370",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941360",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941350",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941340",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941330",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941320",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941310",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941300",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941290",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941280",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941270",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941260",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941250",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941240",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941230",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941220",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941210",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941200",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941190",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941181",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941180",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941170",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941160",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941150",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941140",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941130",
+              "version": 4
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941120",
+              "version": 4
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941110",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941101",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "941100",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "9410000",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "202156846",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "202156845",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "201950708",
+              "version": 1
+            }
+          ],
+          "protection-capability-settings": null,
+          "type": "PROTECTION"
+        },
+        {
+          "action-name": "CHECK",
+          "condition": null,
+          "condition-language": "JMESPATH",
+          "is-body-inspection-enabled": false,
+          "name": "SQL_Injection",
+          "protection-capabilities": [
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "942500",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "942362",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "942360",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "942350",
+              "version": 3
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "942320",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "942300",
+              "version": 2
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "942270",
+              "version": 1
+            },
+            {
+              "action-name": null,
+              "collaborative-action-threshold": null,
+              "collaborative-weights": [],
+              "exclusions": null,
+              "key": "9420000",
+              "version": 2
+            }
+          ],
+          "protection-capability-settings": null,
+          "type": "PROTECTION"
+        }
+      ]
+    },
+    "request-rate-limiting": {
+      "rules": [
+        {
+          "action-name": "BLOCK",
+          "condition": "!address_in(connection.source.address, ['203.0.113.7/32','203.0.113.8/32','203.0.113.9/32','203.0.113.10/32','203.0.113.11/32','203.0.113.12/32','203.0.113.13/32','203.0.113.14/32','203.0.113.15/32','203.0.113.16/32','203.0.113.17/32','203.0.113.18/32','203.0.113.19/32','203.0.113.20/32','203.0.113.21/32','203.0.113.22/32','203.0.113.23/32','203.0.113.24/32','203.0.113.25/32','203.0.113.26/32','203.0.113.27/32','203.0.113.28/32','203.0.113.29/32','203.0.113.30/32','203.0.113.31/32','203.0.113.32/32','203.0.113.33/32','203.0.113.34/32','203.0.113.35/32','203.0.113.36/32','203.0.113.37/32','203.0.113.38/32','203.0.113.39/32','203.0.113.40/32']) &&\n!(i_ends_with(http.request.url.path, '.png') || i_ends_with(http.request.url.path, '.jpg') || i_ends_with(http.request.url.path, '.svg') || i_ends_with(http.request.url.path, '.css') || i_ends_with(http.request.url.path, '.js') || i_contains(http.request.url.path, '.js?'))\n",
+          "condition-language": "JMESPATH",
+          "configurations": [
+            {
+              "action-duration-in-seconds": 3600,
+              "period-in-seconds": 1800,
+              "requests-limit": 1200
+            }
+          ],
+          "name": "tier1-rate-limit",
+          "type": "REQUEST_RATE_LIMITING"
+        },
+        {
+          "action-name": "BLOCK",
+          "condition": "!address_in(connection.source.address, ['203.0.113.7/32','203.0.113.8/32','203.0.113.9/32','203.0.113.10/32','203.0.113.11/32','203.0.113.12/32','203.0.113.13/32','203.0.113.14/32','203.0.113.15/32','203.0.113.16/32','203.0.113.17/32','203.0.113.18/32','203.0.113.19/32','203.0.113.20/32','203.0.113.21/32','203.0.113.22/32','203.0.113.23/32','203.0.113.24/32','203.0.113.25/32','203.0.113.26/32','203.0.113.27/32','203.0.113.28/32','203.0.113.29/32','203.0.113.30/32','203.0.113.31/32','203.0.113.32/32','203.0.113.33/32','203.0.113.34/32','203.0.113.35/32','203.0.113.36/32','203.0.113.37/32','203.0.113.38/32','203.0.113.39/32','203.0.113.40/32']) &&\n!(i_ends_with(http.request.url.path, '.png') || i_ends_with(http.request.url.path, '.jpg') || i_ends_with(http.request.url.path, '.svg') || i_ends_with(http.request.url.path, '.css') || i_ends_with(http.request.url.path, '.js') || i_contains(http.request.url.path, '.js?'))\n",
+          "condition-language": "JMESPATH",
+          "configurations": [
+            {
+              "action-duration-in-seconds": 21600,
+              "period-in-seconds": 10800,
+              "requests-limit": 2400
+            }
+          ],
+          "name": "tier2-rate-limit",
+          "type": "REQUEST_RATE_LIMITING"
+        }
+      ]
+    },
+    "response-access-control": null,
+    "response-protection": null,
+    "system-tags": {
+      "orcl-cloud": {
+        "free-tier-retained": "false"
+      }
+    },
+    "time-created": "2024-11-28T08:59:01.678000+00:00",
+    "time-updated": "2026-01-14T07:19:44.408000+00:00"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

@@ -1,0 +1,74 @@
+{
+  "data": {
+    "certificate-profile-type": null,
+    "certificate-revocation-list-details": null,
+    "certificate-rules": null,
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "config-type": "IMPORTED",
+    "current-version": {
+      "certificate-id": "ocid1.certificate.oc1.ap-tokyo-1.aaaaexample0002",
+      "issuer-ca-version-number": null,
+      "revocation-status": null,
+      "serial-number": "211289328774298262208196451380287031182",
+      "stages": [
+        "CURRENT",
+        "LATEST"
+      ],
+      "subject-alternative-names": [
+        {
+          "type": "DNS",
+          "value": "*.example.com"
+        },
+        {
+          "type": "DNS",
+          "value": "example.com"
+        }
+      ],
+      "time-created": "2023-05-16T05:23:34.004000+00:00",
+      "time-of-deletion": null,
+      "validity": {
+        "time-of-validity-not-after": "2024-06-15T23:59:59+00:00",
+        "time-of-validity-not-before": "2023-05-16T00:00:00+00:00"
+      },
+      "version-name": null,
+      "version-number": 1
+    },
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2023-05-16T05:23:33.950Z"
+      }
+    },
+    "description": null,
+    "freeform-tags": {},
+    "id": "ocid1.certificate.oc1.ap-tokyo-1.aaaaexample0002",
+    "issuer-certificate-authority-id": null,
+    "key-algorithm": "RSA2048",
+    "lifecycle-details": null,
+    "lifecycle-state": "ACTIVE",
+    "name": "example.com",
+    "signature-algorithm": "SHA256_WITH_RSA",
+    "subject": {
+      "common-name": "*.example.com",
+      "country": null,
+      "distinguished-name-qualifier": null,
+      "domain-component": null,
+      "generation-qualifier": null,
+      "given-name": null,
+      "initials": null,
+      "locality-name": null,
+      "organization": null,
+      "organizational-unit": null,
+      "pseudonym": null,
+      "serial-number": null,
+      "state-or-province-name": null,
+      "street": null,
+      "surname": null,
+      "title": null,
+      "user-id": null
+    },
+    "time-created": "2023-05-16T05:23:34.003000+00:00",
+    "time-of-deletion": null
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

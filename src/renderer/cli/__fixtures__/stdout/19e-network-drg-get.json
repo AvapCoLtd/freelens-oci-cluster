@@ -1,0 +1,24 @@
+{
+  "data": {
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "default-drg-route-tables": {
+      "ipsec-tunnel": "ocid1.drgroutetable.oc1.ap-tokyo-1.aaaaexample0001",
+      "remote-peering-connection": "ocid1.drgroutetable.oc1.ap-tokyo-1.aaaaexample0001",
+      "vcn": "ocid1.drgroutetable.oc1.ap-tokyo-1.aaaaexample0002",
+      "virtual-circuit": "ocid1.drgroutetable.oc1.ap-tokyo-1.aaaaexample0001"
+    },
+    "default-export-drg-route-distribution-id": "ocid1.drgroutedistribution.oc1.ap-tokyo-1.aaaaexample0001",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2024-05-21T13:49:02.981Z"
+      }
+    },
+    "display-name": "example_office_vpn-drg",
+    "freeform-tags": {},
+    "id": "ocid1.drg.oc1.ap-tokyo-1.aaaaexample0001",
+    "lifecycle-state": "AVAILABLE",
+    "time-created": "2024-05-21T13:49:03.014000+00:00"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

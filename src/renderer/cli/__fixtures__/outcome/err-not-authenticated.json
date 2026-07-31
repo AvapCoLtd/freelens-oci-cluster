@@ -1,0 +1,14 @@
+{
+  "command": [
+    "compute",
+    "instance",
+    "list",
+    "--compartment-id",
+    "ocid1.compartment.oc1..aaaaexample0003",
+    "--output",
+    "json"
+  ],
+  "exit-code": 1,
+  "stderr": "Warning: To increase security of your API key located at /home/user/.oci/oci_api_key.pem, append an extra line with 'OCI_API_KEY' at the end. For more information, refer to https://docs.oracle.com/iaas/Content/API/Concepts/apisigningkey.htm. To suppress the warning, set the env variable SUPPRESS_LABEL_WARNING=True\nServiceError:\n{\n    \"client_version\": \"Oracle-PythonSDK/2.183.0, Oracle-PythonCLI/3.90.0\",\n    \"code\": \"NotAuthenticated\",\n    \"logging_tips\": \"Please run the OCI CLI command using --debug flag to find more debug information.\",\n    \"message\": \"The required information to complete authentication was not provided or was incorrect.\",\n    \"opc-request-id\": \"EXAMPLEREQUESTID0001EXAMPLEREQ001/EXAMPLEREQUESTID0002EXAMPLEREQ002/EXAMPLEREQUESTID0003EXAMPLEREQ003\",\n    \"operation_name\": \"list_instances\",\n    \"request_endpoint\": \"GET https://iaas.ap-tokyo-1.oraclecloud.com/20160918/instances\",\n    \"status\": 401,\n    \"target_service\": \"compute\",\n    \"timestamp\": \"2026-07-30T13:59:18.500001+00:00\",\n    \"troubleshooting_tips\": \"See [https://docs.oracle.com/iaas/Content/API/References/apierrors.htm] for more information about resolving this error. If you are unable to resolve this issue, run this CLI command with --debug option and contact Oracle support and provide them the full error message.\"\n}\n",
+  "stdout": ""
+}

@@ -1,22 +1,7 @@
 import { Renderer } from "@freelensapp/extensions";
 import { action, makeObservable, observable, runInAction } from "mobx";
-import { collectHostnames } from "../match/dns-check";
-import { gatewayIdsOfRouteTables, type OciGatewayStatusView } from "../match/gateway-status";
-import { managedCertificateIdsOf } from "../match/lb-certificates";
-import { clusterLbIds, collectNsgIds, collectSubnetIds, internalIpsOfNodes } from "../match/network-path";
-import type { OciPage } from "../match/page-sections";
-import { sectionsForPage } from "../match/page-sections";
-import { pickAnchorInstanceId } from "../match/provider-id";
-import {
-  distinctBlockVolumeOcids,
-  distinctFileSystemOcids,
-  getCsiSource,
-  newFileSystemOcids,
-  resolvePvStorage,
-} from "../match/pv-storage";
-import { ingressIpsOfServices } from "../match/service-lb";
-import { resolveAnchor } from "../sdk/anchor";
-import { resolveHostIps } from "../sdk/dns";
+import { resolveAnchor } from "../fetch/anchor";
+import { resolveHostIps } from "../fetch/dns";
 import {
   buildCompartmentIdSet,
   type ClusterOciData,
@@ -39,8 +24,23 @@ import {
   fetchVolumes,
   fetchWafPolicy,
   fetchWafs,
-} from "../sdk/fetch";
-import type { OciErrorKind, OciRawErrorInfo, OciResult } from "../sdk/result";
+} from "../fetch/fetch";
+import { collectHostnames } from "../match/dns-check";
+import { gatewayIdsOfRouteTables, type OciGatewayStatusView } from "../match/gateway-status";
+import { managedCertificateIdsOf } from "../match/lb-certificates";
+import { clusterLbIds, collectNsgIds, collectSubnetIds, internalIpsOfNodes } from "../match/network-path";
+import type { OciPage } from "../match/page-sections";
+import { sectionsForPage } from "../match/page-sections";
+import { pickAnchorInstanceId } from "../match/provider-id";
+import {
+  distinctBlockVolumeOcids,
+  distinctFileSystemOcids,
+  getCsiSource,
+  newFileSystemOcids,
+  resolvePvStorage,
+} from "../match/pv-storage";
+import { ingressIpsOfServices } from "../match/service-lb";
+import type { OciErrorKind, OciRawErrorInfo, OciResult } from "../oci/result";
 import type {
   OciBackendSetHealthView,
   OciBackupPolicyView,
@@ -59,7 +59,7 @@ import type {
   OciVolume,
   OciWafPolicy,
   OciWafSummary,
-} from "../sdk/types";
+} from "../oci/types";
 
 export interface ResolvedAnchor {
   instanceId: string;
@@ -163,11 +163,12 @@ function createIdleCache(): ClusterCache {
 
 const NOT_REQUESTED_MESSAGE = "section not requested for this page";
 
-// ポーリング自動停止の対象(認証系のみ: 30〜60秒ごとの認証コマンド連打・エラー連打を防ぐ)
+// ポーリング自動停止の対象。周期リトライでは自然回復しない種別(認証失効・コマンド起動不能・互換コマンド非互換・内部エラー)に限る。
 const POLLING_STOP_ERROR_KINDS: ReadonlySet<OciErrorKind> = new Set([
   "not_authenticated",
-  "auth_missing",
-  "auth_command",
+  "command_launch_failed",
+  "command_incompatible",
+  "internal",
 ]);
 
 /** backendHealths Mapのキー(UI側のRecord参照と共有)。 */
@@ -186,22 +187,24 @@ function sectionResultOrPlaceholder<T>(section: SectionState<T>): OciResult<T> {
  * 取得・キャッシュし、ページが必要とするセクションだけをensureLoadedで開始する(他ページ分は叩かない)。
  */
 export class OciClusterStore {
-  authCommand = "";
+  ociCliCommand = "";
 
   private readonly caches = observable.map<string, ClusterCache>();
   // クラスタキー+セクション名をキーにした進行中Promiseの登録簿。複数ページから同じセクションが
   // 要求されても1本のfetchにまとめるための単純化(mobxの状態自体は判定に使わない)。
   private readonly inFlight = new Map<string, Promise<unknown>>();
+  // refresh()で進むクラスタ単位の取得世代。旧世代の結果を書き戻すとrefreshで消した値が復活する。
+  private readonly epochs = new Map<string, number>();
 
   constructor() {
     makeObservable(this, {
-      authCommand: observable,
-      setAuthCommand: action,
+      ociCliCommand: observable,
+      setOciCliCommand: action,
     });
   }
 
-  setAuthCommand(value: string): void {
-    this.authCommand = value;
+  setOciCliCommand(value: string): void {
+    this.ociCliCommand = value;
   }
 
   /** ページが表示すべき状態を導出する(未取得/取得中/非OKE/致命エラー/取得済み)。 */
@@ -252,6 +255,7 @@ export class OciClusterStore {
 
   /** そのページのセクション+共有セクション(アンカー/cluster)を再取得する。他ページ専用のセクションは温存する。 */
   refresh(clusterKey: string, page: OciPage): void {
+    this.epochs.set(clusterKey, this.epochOf(clusterKey) + 1);
     const patch: Partial<ClusterCache> = { anchor: { status: "idle" }, cluster: { status: "idle" } };
     for (const key of sectionsForPage(page)) {
       if (key === "fileSystems") {
@@ -284,7 +288,7 @@ export class OciClusterStore {
   /**
    * ポーリング用: ページのセクションを旧データ表示のまま裏で再取得する(force=stale-while-revalidate)。
    * anchor再解決はしない。map系は既存エントリの再取得のみで、新規リソースの発見は手動[更新]の役割。
-   * 戻り値は認証系エラーの種別(検出時のみ)で、呼び出し元がポーリング自動停止に使う。
+   * 戻り値はPOLLING_STOP_ERROR_KINDSに該当した種別(検出時のみ)で、呼び出し元がポーリング自動停止に使う。
    */
   async pollRefresh(clusterKey: string, page: OciPage): Promise<OciErrorKind | undefined> {
     const cache = this.getCache(clusterKey);
@@ -321,22 +325,22 @@ export class OciClusterStore {
             clusterKey,
             "backendHealths",
             key,
-            () => fetchBackendSetHealth(kind as "lb" | "nlb", lbId, nameParts.join(":"), this.authCommand),
+            () => fetchBackendSetHealth(kind as "lb" | "nlb", lbId, nameParts.join(":"), this.ociCliCommand),
             true,
           ),
         );
       }
     }
     const results = await Promise.all(jobs);
-    const authError = results.find((result) => !result.ok && POLLING_STOP_ERROR_KINDS.has(result.kind));
-    return authError && !authError.ok ? authError.kind : undefined;
+    const stopError = results.find((result) => !result.ok && POLLING_STOP_ERROR_KINDS.has(result.kind));
+    return stopError && !stopError.ok ? stopError.kind : undefined;
   }
 
   /** backend health(展開時オンデマンド)の取得開始。キーは kind:lbId:backendSetName。 */
   ensureBackendHealth(clusterKey: string, kind: "lb" | "nlb", lbId: string, backendSetName: string): void {
     const id = backendHealthKey(kind, lbId, backendSetName);
     void this.ensureMapValue(clusterKey, "backendHealths", id, () =>
-      fetchBackendSetHealth(kind, lbId, backendSetName, this.authCommand),
+      fetchBackendSetHealth(kind, lbId, backendSetName, this.ociCliCommand),
     );
   }
 
@@ -344,6 +348,10 @@ export class OciClusterStore {
     const id = backendHealthKey(kind, lbId, backendSetName);
     this.updateMapEntry(clusterKey, "backendHealths", id, { status: "idle" });
     this.ensureBackendHealth(clusterKey, kind, lbId, backendSetName);
+  }
+
+  private epochOf(clusterKey: string): number {
+    return this.epochs.get(clusterKey) ?? 0;
   }
 
   private getCache(clusterKey: string): ClusterCache {
@@ -489,8 +497,10 @@ export class OciClusterStore {
   private ensureAnchor(clusterKey: string): void {
     const cache = this.getCache(clusterKey);
     if (cache.anchor.status !== "idle") return;
-    this.updateCache(clusterKey, { anchor: { status: "loading" } });
     const key = `${clusterKey}:anchor`;
+    this.updateCache(clusterKey, { anchor: { status: "loading" } });
+    // 進行中のrunAnchorを残したまま再開すると完了順で結果が上書きされる
+    if (this.inFlight.has(key)) return;
     const promise = this.runAnchor(clusterKey);
     this.inFlight.set(key, promise);
     promise.finally(() => this.inFlight.delete(key));
@@ -499,13 +509,20 @@ export class OciClusterStore {
   private async runAnchor(clusterKey: string): Promise<void> {
     try {
       const nodeStore = Renderer.K8sApi.nodesStore;
-      await nodeStore.loadAll();
+      try {
+        await nodeStore.loadAll();
+      } catch (error) {
+        this.updateCache(clusterKey, {
+          anchor: { status: "error", errorKind: "other", raw: { message: String(error) }, stage: "node_list" },
+        });
+        return;
+      }
       const instanceId = pickAnchorInstanceId(nodeStore.items.map((node) => node.spec.providerID));
       if (!instanceId) {
         this.updateCache(clusterKey, { anchor: { status: "non_oke" } });
         return;
       }
-      const result = await resolveAnchor(instanceId, this.authCommand);
+      const result = await resolveAnchor(instanceId, this.ociCliCommand);
       if (result.kind === "non_oke") {
         this.updateCache(clusterKey, { anchor: { status: "non_oke" } });
         return;
@@ -583,7 +600,9 @@ export class OciClusterStore {
   ): Promise<OciResult<T>> {
     const current = getCurrent(this.getCache(clusterKey));
     if (current.status === "ready" && !force) return Promise.resolve(current.result);
-    const key = `${clusterKey}:${flightKey}`;
+    const epoch = this.epochOf(clusterKey);
+    // 世代をキーに含めない場合、refresh直後の要求がrefresh前の進行中Promiseに相乗りする
+    const key = `${clusterKey}:e${epoch}:${flightKey}`;
     const existing = this.inFlight.get(key) as Promise<OciResult<T>> | undefined;
     if (existing) return existing;
     // force(ポーリング)時は旧データを表示したまま裏で再取得する(loading化するとページ全体がスピナーに戻る)
@@ -597,7 +616,8 @@ export class OciClusterStore {
         }),
       )
       .then((result) => {
-        setState({ status: "ready", result, fetchedAt: Date.now() });
+        // 旧世代の結果はfetchedAt=nowで「最新」として残るため書き戻さない
+        if (this.epochOf(clusterKey) === epoch) setState({ status: "ready", result, fetchedAt: Date.now() });
         return result;
       });
     this.inFlight.set(key, promise);
@@ -611,7 +631,7 @@ export class OciClusterStore {
       "cluster",
       (cache) => cache.cluster,
       (state) => this.updateCache(clusterKey, { cluster: state }),
-      () => fetchCluster(clusterId, this.authCommand),
+      () => fetchCluster(clusterId, this.ociCliCommand),
       force,
     );
   }
@@ -622,7 +642,7 @@ export class OciClusterStore {
       "instances",
       (cache) => cache.instances,
       (state) => this.updateCache(clusterKey, { instances: state }),
-      () => fetchInstances(compartmentId, this.authCommand),
+      () => fetchInstances(compartmentId, this.ociCliCommand),
       force,
     );
   }
@@ -637,7 +657,7 @@ export class OciClusterStore {
       "taggedResources",
       (cache) => cache.taggedResources,
       (state) => this.updateCache(clusterKey, { taggedResources: state }),
-      () => fetchTaggedResources(clusterId, this.authCommand),
+      () => fetchTaggedResources(clusterId, this.ociCliCommand),
       force,
     );
   }
@@ -662,7 +682,8 @@ export class OciClusterStore {
       "nlbs",
       (cache) => cache.nlbs,
       (state) => this.updateCache(clusterKey, { nlbs: state }),
-      async () => fetchNlbs(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.authCommand),
+      async () =>
+        fetchNlbs(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.ociCliCommand),
       force,
     );
   }
@@ -678,7 +699,8 @@ export class OciClusterStore {
       "lbs",
       (cache) => cache.lbs,
       (state) => this.updateCache(clusterKey, { lbs: state }),
-      async () => fetchLbs(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.authCommand),
+      async () =>
+        fetchLbs(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.ociCliCommand),
       force,
     );
   }
@@ -695,33 +717,41 @@ export class OciClusterStore {
       (cache) => cache.volumes,
       (state) => this.updateCache(clusterKey, { volumes: state }),
       async () =>
-        fetchVolumes(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.authCommand),
+        fetchVolumes(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.ociCliCommand),
       force,
     );
   }
 
   // ライブPV変化への自動追従はしない(既存の手動更新方針を踏襲): 新規FSSは次回のensureLoaded/refreshで拾う。
   private async reconcileFileSystems(clusterKey: string): Promise<void> {
-    const pvStore = Renderer.K8sApi.persistentVolumeStore;
-    await pvStore.loadAll();
-    const resolutions = pvStore.items.map((pv) => {
-      const csi = getCsiSource(pv.spec);
-      return resolvePvStorage(csi?.driver, csi?.volumeHandle);
-    });
-    const distinctOcids = distinctFileSystemOcids(resolutions);
-    const cache = this.getCache(clusterKey);
-    const toStart = newFileSystemOcids(distinctOcids, new Set(cache.fileSystems.keys()));
-    this.updateCache(clusterKey, { fileSystemsReconciled: true });
-    for (const fsId of toStart) {
-      // FSSのスナップショットポリシー名はFileSystem応答のpolicyIdが分かってから引く
-      void this.ensureFileSystem(clusterKey, fsId).then((result) => {
-        if (result.ok && result.data.filesystemSnapshotPolicyId) {
-          void this.ensureFssSnapshotPolicy(clusterKey, result.data.filesystemSnapshotPolicyId);
-        }
+    const epoch = this.epochOf(clusterKey);
+    // 旧世代がreconciled=trueを書き戻すと、refreshで消したエントリが再要求されないまま完了扱いになる
+    const markReconciled = () => {
+      if (this.epochOf(clusterKey) === epoch) this.updateCache(clusterKey, { fileSystemsReconciled: true });
+    };
+    try {
+      const pvStore = Renderer.K8sApi.persistentVolumeStore;
+      await pvStore.loadAll();
+      const resolutions = pvStore.items.map((pv) => {
+        const csi = getCsiSource(pv.spec);
+        return resolvePvStorage(csi?.driver, csi?.volumeHandle);
       });
-    }
-    for (const volumeId of distinctBlockVolumeOcids(resolutions)) {
-      void this.ensureVolumeBackupPolicy(clusterKey, volumeId);
+      const distinctOcids = distinctFileSystemOcids(resolutions);
+      const cache = this.getCache(clusterKey);
+      const toStart = newFileSystemOcids(distinctOcids, new Set(cache.fileSystems.keys()));
+      markReconciled();
+      for (const fsId of toStart) {
+        // FSSのスナップショットポリシー名はFileSystem応答のpolicyIdが分かってから引く
+        void this.ensureFileSystem(clusterKey, fsId).then((result) => {
+          const policyId = result.ok ? result.data["filesystem-snapshot-policy-id"] : undefined;
+          if (policyId) void this.ensureFssSnapshotPolicy(clusterKey, policyId);
+        });
+      }
+      for (const volumeId of distinctBlockVolumeOcids(resolutions)) {
+        void this.ensureVolumeBackupPolicy(clusterKey, volumeId);
+      }
+    } catch {
+      markReconciled();
     }
   }
 
@@ -734,7 +764,7 @@ export class OciClusterStore {
       clusterKey,
       "volumeBackupPolicies",
       volumeId,
-      () => fetchVolumeBackupPolicyName(volumeId, this.authCommand),
+      () => fetchVolumeBackupPolicyName(volumeId, this.ociCliCommand),
       force,
     );
   }
@@ -748,16 +778,16 @@ export class OciClusterStore {
       clusterKey,
       "fssSnapshotPolicies",
       policyId,
-      () => fetchFssSnapshotPolicyName(policyId, this.authCommand),
+      () => fetchFssSnapshotPolicyName(policyId, this.ociCliCommand),
       force,
     );
   }
 
   private ensureFileSystem(clusterKey: string, fsId: string, force = false): Promise<OciResult<OciFileSystem>> {
-    return this.ensureMapValue(clusterKey, "fileSystems", fsId, () => fetchFileSystem(fsId, this.authCommand), force);
+    return this.ensureMapValue(clusterKey, "fileSystems", fsId, () => fetchFileSystem(fsId, this.ociCliCommand), force);
   }
 
-  // per-OCID Map(設計 Decision #10: fileSystemsパターン)のensure共通化。
+  // per-OCID Map(fileSystemsと同じパターン)のensure共通化。
   private ensureMapValue<T>(
     clusterKey: string,
     mapKey: OcidMapKey,
@@ -786,7 +816,7 @@ export class OciClusterStore {
       "nodePools",
       (cache) => cache.nodePools,
       (state) => this.updateCache(clusterKey, { nodePools: state }),
-      () => fetchNodePools(clusterId, compartmentId, this.authCommand),
+      () => fetchNodePools(clusterId, compartmentId, this.ociCliCommand),
       force,
     );
   }
@@ -802,13 +832,14 @@ export class OciClusterStore {
       "wafs",
       (cache) => cache.wafs,
       (state) => this.updateCache(clusterKey, { wafs: state }),
-      async () => fetchWafs(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.authCommand),
+      async () =>
+        fetchWafs(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.ociCliCommand),
       force,
     );
   }
 
   private ensureSubnet(clusterKey: string, subnetId: string, force = false): Promise<OciResult<OciSubnet>> {
-    return this.ensureMapValue(clusterKey, "subnets", subnetId, () => fetchSubnet(subnetId, this.authCommand), force);
+    return this.ensureMapValue(clusterKey, "subnets", subnetId, () => fetchSubnet(subnetId, this.ociCliCommand), force);
   }
 
   private ensureSecurityList(clusterKey: string, slId: string, force = false): Promise<OciResult<OciSecurityList>> {
@@ -816,17 +847,17 @@ export class OciClusterStore {
       clusterKey,
       "securityLists",
       slId,
-      () => fetchSecurityList(slId, this.authCommand),
+      () => fetchSecurityList(slId, this.ociCliCommand),
       force,
     );
   }
 
   private ensureRouteTable(clusterKey: string, rtId: string, force = false): Promise<OciResult<OciRouteTable>> {
-    return this.ensureMapValue(clusterKey, "routeTables", rtId, () => fetchRouteTable(rtId, this.authCommand), force);
+    return this.ensureMapValue(clusterKey, "routeTables", rtId, () => fetchRouteTable(rtId, this.ociCliCommand), force);
   }
 
   private ensureNsg(clusterKey: string, nsgId: string, force = false): Promise<OciResult<OciNsgWithRules>> {
-    return this.ensureMapValue(clusterKey, "nsgs", nsgId, () => fetchNsgWithRules(nsgId, this.authCommand), force);
+    return this.ensureMapValue(clusterKey, "nsgs", nsgId, () => fetchNsgWithRules(nsgId, this.ociCliCommand), force);
   }
 
   private ensureWafPolicy(clusterKey: string, policyId: string, force = false): Promise<OciResult<OciWafPolicy>> {
@@ -834,7 +865,7 @@ export class OciClusterStore {
       clusterKey,
       "wafPolicies",
       policyId,
-      () => fetchWafPolicy(policyId, this.authCommand),
+      () => fetchWafPolicy(policyId, this.ociCliCommand),
       force,
     );
   }
@@ -844,7 +875,7 @@ export class OciClusterStore {
       clusterKey,
       "gateways",
       entityId,
-      () => fetchGatewayStatus(entityId, this.authCommand),
+      () => fetchGatewayStatus(entityId, this.ociCliCommand),
       force,
     );
   }
@@ -862,7 +893,7 @@ export class OciClusterStore {
       clusterKey,
       "managedCerts",
       certificateId,
-      () => fetchManagedCertificate(certificateId, this.authCommand),
+      () => fetchManagedCertificate(certificateId, this.ociCliCommand),
       force,
     );
   }
@@ -874,60 +905,67 @@ export class OciClusterStore {
    */
   private async reconcileNetwork(clusterKey: string, clusterId: string, compartmentId: string): Promise<void> {
     if (this.getCache(clusterKey).networkReconciled) return;
-    const key = `${clusterKey}:networkReconcile`;
+    const epoch = this.epochOf(clusterKey);
+    const key = `${clusterKey}:e${epoch}:networkReconcile`;
     const existing = this.inFlight.get(key) as Promise<void> | undefined;
     if (existing) return existing;
     const promise = (async () => {
-      const [cluster, nodePools, nlbs, lbs, taggedResources, wafs] = await Promise.all([
-        this.ensureCluster(clusterKey, clusterId),
-        this.ensureNodePools(clusterKey, clusterId, compartmentId),
-        this.ensureNlbs(clusterKey, compartmentId, clusterId),
-        this.ensureLbs(clusterKey, compartmentId, clusterId),
-        this.ensureTaggedResources(clusterKey, clusterId),
-        this.ensureWafs(clusterKey, compartmentId, clusterId),
-        this.ensureServiceNamespaces(clusterKey),
-      ]);
-      const deps = { cluster, nodePools, nlbs, lbs };
-      // compartment内の無関係なLBのsubnet/NSGまで取得しない(クラスタ関連判定はUI表示と同じ基準)
-      const lbIds = clusterLbIds(
-        { taggedResources, nlbs, lbs },
-        ingressIpsOfServices(Renderer.K8sApi.serviceStore.items),
-        internalIpsOfNodes(Renderer.K8sApi.nodesStore.items),
-      );
-      const subnetResults = await Promise.all(
-        collectSubnetIds(deps, lbIds).map((subnetId) => this.ensureSubnet(clusterKey, subnetId)),
-      );
-      const rtPromises: Promise<OciResult<OciRouteTable>>[] = [];
-      for (const subnet of subnetResults) {
-        if (!subnet.ok) continue;
-        for (const slId of subnet.data.securityListIds ?? []) void this.ensureSecurityList(clusterKey, slId);
-        if (subnet.data.routeTableId) rtPromises.push(this.ensureRouteTable(clusterKey, subnet.data.routeTableId));
-      }
-      // RTのルート宛先ゲートウェイの生死表示(RT応答が出揃ってから対象を確定する)
-      const routeTables = (await Promise.all(rtPromises)).filter((rt) => rt.ok).map((rt) => rt.data);
-      for (const gatewayId of gatewayIdsOfRouteTables(routeTables)) void this.ensureGateway(clusterKey, gatewayId);
-      // listener証明書(Certificatesサービス方式)の期限。クラスタ関連のclassic LBのみ対象
-      if (lbs.ok) {
-        for (const lb of lbs.data) {
-          if (!lbIds.has(lb.id)) continue;
-          for (const certId of managedCertificateIdsOf(lb)) void this.ensureManagedCert(clusterKey, certId);
+      try {
+        const [cluster, nodePools, nlbs, lbs, taggedResources, wafs] = await Promise.all([
+          this.ensureCluster(clusterKey, clusterId),
+          this.ensureNodePools(clusterKey, clusterId, compartmentId),
+          this.ensureNlbs(clusterKey, compartmentId, clusterId),
+          this.ensureLbs(clusterKey, compartmentId, clusterId),
+          this.ensureTaggedResources(clusterKey, clusterId),
+          this.ensureWafs(clusterKey, compartmentId, clusterId),
+          this.ensureServiceNamespaces(clusterKey),
+        ]);
+        const deps = { cluster, nodePools, nlbs, lbs };
+        // compartment内の無関係なLBのsubnet/NSGまで取得しない(クラスタ関連判定はUI表示と同じ基準)
+        const lbIds = clusterLbIds(
+          { taggedResources, nlbs, lbs },
+          ingressIpsOfServices(Renderer.K8sApi.serviceStore.items),
+          internalIpsOfNodes(Renderer.K8sApi.nodesStore.items),
+        );
+        const subnetResults = await Promise.all(
+          collectSubnetIds(deps, lbIds).map((subnetId) => this.ensureSubnet(clusterKey, subnetId)),
+        );
+        const rtPromises: Promise<OciResult<OciRouteTable>>[] = [];
+        for (const subnet of subnetResults) {
+          if (!subnet.ok) continue;
+          for (const slId of subnet.data["security-list-ids"] ?? []) void this.ensureSecurityList(clusterKey, slId);
+          const routeTableId = subnet.data["route-table-id"];
+          if (routeTableId) rtPromises.push(this.ensureRouteTable(clusterKey, routeTableId));
         }
-      }
-      // DNS突合(Ingress/Serviceのホスト名をこの端末のリゾルバで解決する)
-      await this.ensureIngressNamespaces(clusterKey);
-      const hosts = collectHostnames(Renderer.K8sApi.ingressStore.items, Renderer.K8sApi.serviceStore.items);
-      for (const host of hosts) void this.ensureDnsCheck(clusterKey, host);
-      for (const nsgId of collectNsgIds(deps, lbIds)) void this.ensureNsg(clusterKey, nsgId);
-      if (wafs.ok) {
-        for (const waf of wafs.data) {
-          const policyId = waf.webAppFirewallPolicyId;
-          if (policyId) void this.ensureWafPolicy(clusterKey, policyId);
+        // RTのルート宛先ゲートウェイの生死表示(RT応答が出揃ってから対象を確定する)
+        const routeTables = (await Promise.all(rtPromises)).filter((rt) => rt.ok).map((rt) => rt.data);
+        for (const gatewayId of gatewayIdsOfRouteTables(routeTables)) void this.ensureGateway(clusterKey, gatewayId);
+        // listener証明書(Certificatesサービス方式)の期限。クラスタ関連のclassic LBのみ対象
+        if (lbs.ok) {
+          for (const lb of lbs.data) {
+            if (!lbIds.has(lb.id)) continue;
+            for (const certId of managedCertificateIdsOf(lb)) void this.ensureManagedCert(clusterKey, certId);
+          }
         }
+        // DNS突合(Ingress/Serviceのホスト名をこの端末のリゾルバで解決する)
+        await this.ensureIngressNamespaces(clusterKey);
+        const hosts = collectHostnames(Renderer.K8sApi.ingressStore.items, Renderer.K8sApi.serviceStore.items);
+        for (const host of hosts) void this.ensureDnsCheck(clusterKey, host);
+        for (const nsgId of collectNsgIds(deps, lbIds)) void this.ensureNsg(clusterKey, nsgId);
+        if (wafs.ok) {
+          for (const waf of wafs.data) {
+            const policyId = waf["web-app-firewall-policy-id"];
+            if (policyId) void this.ensureWafPolicy(clusterKey, policyId);
+          }
+        }
+      } catch {
+        // 途中で落ちても取得済みの分で表示を進める
       }
-      this.updateCache(clusterKey, { networkReconciled: true });
+      // 旧世代がreconciled=trueを書き戻すと、refreshで消したエントリが再要求されないまま完了扱いになる
+      if (this.epochOf(clusterKey) === epoch) this.updateCache(clusterKey, { networkReconciled: true });
     })();
     this.inFlight.set(key, promise);
-    promise.finally(() => this.inFlight.delete(key));
+    void promise.catch(() => undefined).finally(() => this.inFlight.delete(key));
     return promise;
   }
 
@@ -949,7 +987,7 @@ export class OciClusterStore {
       onDone?.();
     })();
     this.inFlight.set(key, promise);
-    promise.finally(() => this.inFlight.delete(key));
+    void promise.catch(() => undefined).finally(() => this.inFlight.delete(key));
     return promise;
   }
 

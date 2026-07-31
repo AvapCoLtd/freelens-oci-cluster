@@ -1,0 +1,10 @@
+{
+  "command": [
+    "compute",
+    "instance",
+    "get"
+  ],
+  "exit-code": 1,
+  "stderr": "Usage: oci compute instance get [OPTIONS]\n\nError: Missing option(s) --instance-id.\n",
+  "stdout": ""
+}

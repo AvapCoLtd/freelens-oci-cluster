@@ -15,9 +15,10 @@ const LABEL_STYLE: React.CSSProperties = {
 };
 
 /**
- * 各ページ共通の自動更新ON/OFF(設計 Decision #14の全ページ展開)。
+ * 各ページ共通の自動更新ON/OFF。
  * タイマーはこのコンポーネントの生存期間(=そのページ表示中)のみ動く。
- * 再取得は旧データ表示のまま裏で行う(pollRefresh)。認証エラー検出で自動停止し、永続化トグルもOFFへ倒す。
+ * 再取得は旧データ表示のまま裏で行う(pollRefresh)。周期リトライで回復しないエラーの検出で自動停止し、
+ * 永続化トグルもOFFへ倒す。
  */
 export const PollingToggle = observer(function PollingToggle({
   clusterKey,
@@ -33,8 +34,8 @@ export const PollingToggle = observer(function PollingToggle({
   React.useEffect(() => {
     if (!enabled) return undefined;
     const timer = setInterval(() => {
-      void ociClusterStore.pollRefresh(clusterKey, page).then((authErrorKind) => {
-        if (authErrorKind) ociPreferencesStore.setNodePollingEnabled(false);
+      void ociClusterStore.pollRefresh(clusterKey, page).then((stopKind) => {
+        if (stopKind) ociPreferencesStore.setNodePollingEnabled(false);
       });
     }, intervalSeconds * 1000);
     return () => clearInterval(timer);

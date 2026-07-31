@@ -1,0 +1,329 @@
+{
+  "data": [
+    {
+      "backend-sets": {
+        "TCP-443": {
+          "backend-max-connections": null,
+          "backends": [
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.11.23",
+              "max-connections": null,
+              "name": "10.0.11.23:32704",
+              "offline": false,
+              "port": 32704,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.11.27",
+              "max-connections": null,
+              "name": "10.0.11.27:32704",
+              "offline": false,
+              "port": 32704,
+              "weight": 1
+            }
+          ],
+          "health-checker": {
+            "interval-in-millis": 10000,
+            "is-force-plain-text": false,
+            "port": 10256,
+            "protocol": "HTTP",
+            "response-body-regex": ".*",
+            "retries": 3,
+            "return-code": 200,
+            "timeout-in-millis": 3000,
+            "url-path": "/healthz"
+          },
+          "lb-cookie-session-persistence-configuration": null,
+          "name": "TCP-443",
+          "policy": "ROUND_ROBIN",
+          "session-persistence-configuration": null,
+          "ssl-configuration": null
+        },
+        "TCP-80": {
+          "backend-max-connections": null,
+          "backends": [
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.11.27",
+              "max-connections": null,
+              "name": "10.0.11.27:30743",
+              "offline": false,
+              "port": 30743,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.11.23",
+              "max-connections": null,
+              "name": "10.0.11.23:30743",
+              "offline": false,
+              "port": 30743,
+              "weight": 1
+            }
+          ],
+          "health-checker": {
+            "interval-in-millis": 10000,
+            "is-force-plain-text": false,
+            "port": 10256,
+            "protocol": "HTTP",
+            "response-body-regex": ".*",
+            "retries": 3,
+            "return-code": 200,
+            "timeout-in-millis": 3000,
+            "url-path": "/healthz"
+          },
+          "lb-cookie-session-persistence-configuration": null,
+          "name": "TCP-80",
+          "policy": "ROUND_ROBIN",
+          "session-persistence-configuration": null,
+          "ssl-configuration": null
+        }
+      },
+      "certificates": {},
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0002",
+          "CreatedOn": "2024-10-29T06:32:32.695Z"
+        }
+      },
+      "display-name": "00000000-0000-4000-8000-000000000006",
+      "freeform-tags": {
+        "Cluster": "client-e-k8s-cluster"
+      },
+      "hostnames": {},
+      "id": "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001",
+      "ip-addresses": [
+        {
+          "ip-address": "203.0.113.4",
+          "is-public": true,
+          "reserved-ip": null
+        }
+      ],
+      "ip-mode": "IPV4",
+      "is-delete-protection-enabled": null,
+      "is-private": false,
+      "is-request-id-enabled": null,
+      "lifecycle-state": "ACTIVE",
+      "listeners": {
+        "TCP-443": {
+          "connection-configuration": {
+            "backend-tcp-proxy-protocol-options": null,
+            "backend-tcp-proxy-protocol-version": null,
+            "idle-timeout": 300
+          },
+          "default-backend-set-name": "TCP-443",
+          "hostname-names": null,
+          "name": "TCP-443",
+          "path-route-set-name": null,
+          "port": 443,
+          "protocol": "TCP",
+          "routing-policy-name": null,
+          "rule-set-names": [],
+          "ssl-configuration": null
+        },
+        "TCP-80": {
+          "connection-configuration": {
+            "backend-tcp-proxy-protocol-options": null,
+            "backend-tcp-proxy-protocol-version": null,
+            "idle-timeout": 300
+          },
+          "default-backend-set-name": "TCP-80",
+          "hostname-names": null,
+          "name": "TCP-80",
+          "path-route-set-name": null,
+          "port": 80,
+          "protocol": "TCP",
+          "routing-policy-name": null,
+          "rule-set-names": [],
+          "ssl-configuration": null
+        }
+      },
+      "network-security-group-ids": [],
+      "path-route-sets": {},
+      "request-id-header": null,
+      "routing-policies": {},
+      "rule-sets": {},
+      "security-attributes": {},
+      "shape-details": {
+        "maximum-bandwidth-in-mbps": 100,
+        "minimum-bandwidth-in-mbps": 10
+      },
+      "shape-name": "flexible",
+      "ssl-cipher-suites": {},
+      "subnet-ids": [
+        "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0004"
+      ],
+      "system-tags": {
+        "orcl-cloud": {
+          "free-tier-retained": "false"
+        },
+        "orcl-containerengine": {
+          "Cluster": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0002"
+        }
+      },
+      "time-created": "2024-10-29T06:32:33.125000+00:00"
+    },
+    {
+      "backend-sets": {
+        "TCP-443": {
+          "backend-max-connections": null,
+          "backends": [
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.17.117",
+              "max-connections": null,
+              "name": "10.0.17.117:32426",
+              "offline": false,
+              "port": 32426,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.17.95",
+              "max-connections": null,
+              "name": "10.0.17.95:32426",
+              "offline": false,
+              "port": 32426,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.17.82",
+              "max-connections": null,
+              "name": "10.0.17.82:32426",
+              "offline": false,
+              "port": 32426,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.17.240",
+              "max-connections": null,
+              "name": "10.0.17.240:32426",
+              "offline": false,
+              "port": 32426,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.17.30",
+              "max-connections": null,
+              "name": "10.0.17.30:32426",
+              "offline": false,
+              "port": 32426,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.17.142",
+              "max-connections": null,
+              "name": "10.0.17.142:32426",
+              "offline": false,
+              "port": 32426,
+              "weight": 1
+            },
+            {
+              "backup": false,
+              "drain": false,
+              "ip-address": "10.0.17.89",
+              "max-connections": null,
+              "name": "10.0.17.89:32426",
+              "offline": false,
+              "port": 32426,
+              "weight": 1
+            }
+          ],
+          "health-checker": {
+            "interval-in-millis": 10000,
+            "is-force-plain-text": false,
+            "port": 10256,
+            "protocol": "HTTP",
+            "response-body-regex": ".*",
+            "retries": 3,
+            "return-code": 200,
+            "timeout-in-millis": 3000,
+            "url-path": "/healthz"
+          },
+          "lb-cookie-session-persistence-configuration": null,
+          "name": "TCP-443",
+          "policy": "ROUND_ROBIN",
+          "session-persistence-configuration": null,
+          "ssl-configuration": null
+        }
+      },
+      "certificates": {},
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0003",
+          "CreatedOn": "2025-09-30T22:15:50.144Z"
+        }
+      },
+      "display-name": "00000000-0000-4000-8000-000000000007",
+      "freeform-tags": {},
+      "hostnames": {},
+      "id": "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0002",
+      "ip-addresses": [
+        {
+          "ip-address": "203.0.113.5",
+          "is-public": true,
+          "reserved-ip": null
+        }
+      ],
+      "ip-mode": "IPV4",
+      "is-delete-protection-enabled": null,
+      "is-private": false,
+      "is-request-id-enabled": null,
+      "lifecycle-state": "ACTIVE",
+      "listeners": {
+        "TCP-443": {
+          "connection-configuration": {
+            "backend-tcp-proxy-protocol-options": null,
+            "backend-tcp-proxy-protocol-version": null,
+            "idle-timeout": 300
+          },
+          "default-backend-set-name": "TCP-443",
+          "hostname-names": null,
+          "name": "TCP-443",
+          "path-route-set-name": null,
+          "port": 443,
+          "protocol": "TCP",
+          "routing-policy-name": null,
+          "rule-set-names": [],
+          "ssl-configuration": null
+        }
+      },
+      "network-security-group-ids": [],
+      "path-route-sets": {},
+      "request-id-header": null,
+      "routing-policies": {},
+      "rule-sets": {},
+      "security-attributes": {},
+      "shape-details": null,
+      "shape-name": "100Mbps",
+      "ssl-cipher-suites": {},
+      "subnet-ids": [
+        "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0005"
+      ],
+      "system-tags": {
+        "orcl-containerengine": {
+          "Cluster": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0003"
+        }
+      },
+      "time-created": "2025-09-30T22:15:50.860000+00:00"
+    }
+  ]
+}

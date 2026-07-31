@@ -1,0 +1,54 @@
+{
+  "data": {
+    "items": [
+      {
+        "backend-type": "LOAD_BALANCER",
+        "compartment-id": "ocid1.compartment.oc1..aaaaexample0002",
+        "defined-tags": {
+          "Oracle-Tags": {
+            "CreatedBy": "default/user@example.com",
+            "CreatedOn": "2025-07-30T12:01:35.959Z"
+          }
+        },
+        "display-name": "client-a-staging-waf",
+        "freeform-tags": {},
+        "id": "ocid1.webappfirewall.oc1.ap-tokyo-1.aaaaexample0001",
+        "lifecycle-details": null,
+        "lifecycle-state": "ACTIVE",
+        "load-balancer-id": "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0003",
+        "system-tags": {
+          "orcl-cloud": {
+            "free-tier-retained": "false"
+          }
+        },
+        "time-created": "2025-07-30T12:01:36.011000+00:00",
+        "time-updated": "2025-07-30T12:01:59.203000+00:00",
+        "web-app-firewall-policy-id": "ocid1.webappfirewallpolicy.oc1.ap-tokyo-1.aaaaexample0001"
+      },
+      {
+        "backend-type": "LOAD_BALANCER",
+        "compartment-id": "ocid1.compartment.oc1..aaaaexample0002",
+        "defined-tags": {
+          "Oracle-Tags": {
+            "CreatedBy": "client-a/client-a+terraform@example.com",
+            "CreatedOn": "2024-12-17T04:33:46.619Z"
+          }
+        },
+        "display-name": "client-a-release-waf",
+        "freeform-tags": {},
+        "id": "ocid1.webappfirewall.oc1.ap-tokyo-1.aaaaexample0002",
+        "lifecycle-details": null,
+        "lifecycle-state": "ACTIVE",
+        "load-balancer-id": "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0004",
+        "system-tags": {
+          "orcl-cloud": {
+            "free-tier-retained": "false"
+          }
+        },
+        "time-created": "2024-12-17T04:33:46.724000+00:00",
+        "time-updated": "2026-04-28T06:48:21.753000+00:00",
+        "web-app-firewall-policy-id": "ocid1.webappfirewallpolicy.oc1.ap-tokyo-1.aaaaexample0001"
+      }
+    ]
+  }
+}

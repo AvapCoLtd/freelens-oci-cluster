@@ -1,0 +1,41 @@
+{
+  "data": {
+    "are-quota-rules-enabled": false,
+    "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+    "clone-attach-status": "DETACHED",
+    "clone-count": 0,
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "compartment-quota-enforcement-state": "NOT_BLOCKED",
+    "defined-tags": {
+      "example-Tags": {
+        "Owner": "example"
+      },
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2026-07-03T12:48:25.540Z"
+      }
+    },
+    "display-name": "example-website-fss",
+    "filesystem-snapshot-policy-id": "ocid1.filesystemsnapshotpolicy.oc1.ap_tokyo_1.aaaaexample0001",
+    "freeform-tags": {},
+    "id": "ocid1.filesystem.oc1.ap_tokyo_1.aaaaexample0001",
+    "is-clone-parent": false,
+    "is-hydrated": true,
+    "is-targetable": false,
+    "kms-key-id": "",
+    "lifecycle-details": "",
+    "lifecycle-state": "ACTIVE",
+    "locks": [],
+    "metered-bytes": 216955904,
+    "quota-enforcement-state": "DISABLED",
+    "replication-source-count": 0,
+    "replication-target-id": "",
+    "source-details": {
+      "parent-file-system-id": "",
+      "source-snapshot-id": ""
+    },
+    "system-tags": {},
+    "time-created": "2026-07-03T12:48:25.653000+00:00"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

@@ -15,7 +15,7 @@ export function StatusBadge({ label, tone }: { label: string; tone: StatusTone }
   return <Badge label={label} small style={TONE_STYLE[tone]} />;
 }
 
-/** OCIリソースのlifecycle-state表示(設計:表示フィールド)。未取得時は"-"をneutralで表示する。 */
+/** OCIリソースのlifecycle-state表示。未取得時は"-"をneutralで表示する。 */
 export function LifecycleBadge({ state }: { state: string | undefined }) {
   if (!state) return <StatusBadge label="-" tone="neutral" />;
   return <StatusBadge label={state} tone={isAbnormalLifecycleState(state) ? "error" : "success"} />;

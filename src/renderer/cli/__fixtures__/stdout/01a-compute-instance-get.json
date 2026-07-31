@@ -1,0 +1,124 @@
+{
+  "data": {
+    "agent-config": {
+      "are-all-plugins-disabled": false,
+      "is-management-disabled": false,
+      "is-monitoring-disabled": false,
+      "plugins-config": null
+    },
+    "availability-config": {
+      "is-live-migration-preferred": null,
+      "recovery-action": "RESTORE_INSTANCE"
+    },
+    "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+    "capacity-reservation-id": null,
+    "cluster-placement-group-id": null,
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "dedicated-vm-host-id": null,
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "ocid1.nodepool.oc1.ap-tokyo-1.aaaaexample0001",
+        "CreatedOn": "2025-05-16T12:29:37.551Z"
+      }
+    },
+    "display-name": "oke-cexample01-nexample01-sexample01-0",
+    "extended-metadata": {},
+    "fault-domain": "FAULT-DOMAIN-1",
+    "freeform-tags": {},
+    "id": "ocid1.instance.oc1.ap-tokyo-1.aaaaexample0001",
+    "image-id": "ocid1.image.oc1.ap-tokyo-1.aaaaexample0001",
+    "instance-configuration-id": null,
+    "instance-options": {
+      "are-legacy-imds-endpoints-disabled": false
+    },
+    "ipxe-script": null,
+    "is-ai-enterprise-enabled": null,
+    "is-cross-numa-node": false,
+    "launch-mode": "PARAVIRTUALIZED",
+    "launch-options": {
+      "boot-volume-type": "PARAVIRTUALIZED",
+      "firmware": "UEFI_64",
+      "is-consistent-volume-naming-enabled": true,
+      "is-pv-encryption-in-transit-enabled": false,
+      "network-type": "PARAVIRTUALIZED",
+      "remote-data-volume-type": "PARAVIRTUALIZED"
+    },
+    "licensing-configs": null,
+    "lifecycle-state": "RUNNING",
+    "metadata": {
+      "ansible_args": "<redacted>",
+      "bootstrap-kubelet-conf": "<redacted>",
+      "inventory_tmpl": "<redacted>",
+      "ip-families": "<redacted>",
+      "oci_tld": "<redacted>",
+      "oke-ad": "<redacted>",
+      "oke-cluster-display-name": "<redacted>",
+      "oke-cluster-id": "<redacted>",
+      "oke-cluster-label": "<redacted>",
+      "oke-compartment-name": "<redacted>",
+      "oke-image-name": "<redacted>",
+      "oke-initial-node-labels": "<redacted>",
+      "oke-is-cloud-init": "<redacted>",
+      "oke-is-on-private-subnet": "<redacted>",
+      "oke-is-onsr": "<redacted>",
+      "oke-is-preemptible": "<redacted>",
+      "oke-is-private-worker": "<redacted>",
+      "oke-k8version": "<redacted>",
+      "oke-node-package-node-all-version": "<redacted>",
+      "oke-pool-id": "<redacted>",
+      "oke-pool-label": "<redacted>",
+      "oke-slot": "<redacted>",
+      "oke-subnet-label": "<redacted>",
+      "oke-tenancy-id": "<redacted>",
+      "oke-tm": "<redacted>",
+      "oke_artifact_signing_key": "<redacted>",
+      "oke_init_script": "<redacted>",
+      "oke_maturity": "<redacted>",
+      "oke_namespace": "<redacted>",
+      "realm": "<redacted>",
+      "ssh_authorized_keys": "<redacted>",
+      "user_data": "<redacted>"
+    },
+    "placement-constraint-details": null,
+    "platform-config": null,
+    "preemptible-instance-config": null,
+    "region": "ap-tokyo-1",
+    "security-attributes": {},
+    "security-attributes-state": "STABLE",
+    "shape": "VM.Standard.E3.Flex",
+    "shape-config": {
+      "baseline-ocpu-utilization": null,
+      "gpu-description": null,
+      "gpus": 0,
+      "local-disk-description": null,
+      "local-disks": 0,
+      "local-disks-total-size-in-gbs": null,
+      "local-volume-size-in-gbs": null,
+      "max-vnic-attachments": 2,
+      "memory-in-gbs": 16.0,
+      "networking-bandwidth-in-gbps": 1.0,
+      "ocpus": 1.0,
+      "processor-description": "2.25 GHz AMD EPYC™ 7742 (Rome)",
+      "resource-management": null,
+      "vcpus": 2
+    },
+    "source-details": {
+      "boot-volume-size-in-gbs": null,
+      "boot-volume-vpus-per-gb": null,
+      "image-id": "ocid1.image.oc1.ap-tokyo-1.aaaaexample0001",
+      "instance-source-image-filter-details": null,
+      "kms-key-id": null,
+      "source-type": "image"
+    },
+    "system-tags": {
+      "orcl-containerengine": {
+        "Cluster": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001",
+        "NodePool": "ocid1.nodepool.oc1.ap-tokyo-1.aaaaexample0001",
+        "NodeType": "oke-managed"
+      }
+    },
+    "time-created": "2025-05-16T12:29:38.089000+00:00",
+    "time-maintenance-reboot-due": null
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

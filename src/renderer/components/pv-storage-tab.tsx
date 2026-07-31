@@ -1,9 +1,9 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
+import type { ClusterOciData } from "../fetch/fetch";
 import type { OciConsoleResourceType } from "../match/console-url";
 import { getCsiSource, resolvePvStorage } from "../match/pv-storage";
 import { sortRows } from "../match/sort-rows";
-import type { ClusterOciData } from "../sdk/fetch";
 import { ConsoleButton } from "./console-button";
 import { EmptyState, LOADING_LABEL } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -56,9 +56,9 @@ function resolveStorage(
     }
     const volume = data.volumes.data.find((v) => v.id === ocid);
     return {
-      displayName: volume?.displayName ?? "-",
-      lifecycleState: volume?.lifecycleState,
-      sizeGb: volume?.sizeInGBs,
+      displayName: volume?.["display-name"] ?? "-",
+      lifecycleState: volume?.["lifecycle-state"],
+      sizeGb: volume?.["size-in-gbs"],
       ocid,
       consoleType: "volume",
       kindLabel: "Volume",
@@ -73,10 +73,10 @@ function resolveStorage(
     if (!fsResult?.ok) {
       return { displayName: "-", kindLabel: "FSS", ocid, consoleType: "filesystem", backupLabel: LOADING_LABEL };
     }
-    const policyId = fsResult.data.filesystemSnapshotPolicyId;
+    const policyId = fsResult.data["filesystem-snapshot-policy-id"];
     return {
-      displayName: fsResult.data.displayName ?? "-",
-      lifecycleState: fsResult.data.lifecycleState,
+      displayName: fsResult.data["display-name"] ?? "-",
+      lifecycleState: fsResult.data["lifecycle-state"],
       ocid,
       consoleType: "filesystem",
       kindLabel: "FSS",

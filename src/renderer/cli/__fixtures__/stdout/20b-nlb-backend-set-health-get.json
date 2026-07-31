@@ -1,0 +1,10 @@
+{
+  "data": {
+    "critical-state-backend-names": [],
+    "status": "OK",
+    "total-backend-count": 3,
+    "unknown-state-backend-names": [],
+    "warning-state-backend-names": []
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

@@ -1,0 +1,12 @@
+{
+  "command": [
+    "compute",
+    "instance",
+    "get",
+    "--instance-id",
+    "ocid1.instance.oc1.ap-tokyo-1.aaaaexample0002"
+  ],
+  "exit-code": 1,
+  "stderr": "ServiceError:\n{\n    \"client_version\": \"Oracle-PythonSDK/2.183.0, Oracle-PythonCLI/3.90.0\",\n    \"code\": \"NotAuthorizedOrNotFound\",\n    \"logging_tips\": \"Please run the OCI CLI command using --debug flag to find more debug information.\",\n    \"message\": \"Authorization failed or requested resource not found.\",\n    \"opc-request-id\": \"EXAMPLEREQUESTID0001EXAMPLEREQ001/EXAMPLEREQUESTID0002EXAMPLEREQ002/EXAMPLEREQUESTID0003EXAMPLEREQ003\",\n    \"operation_name\": \"get_instance\",\n    \"request_endpoint\": \"GET https://iaas.ap-tokyo-1.oraclecloud.com/20160918/instances/ocid1.instance.oc1.ap-tokyo-1.aaaaexample0002\",\n    \"status\": 404,\n    \"target_service\": \"compute\",\n    \"timestamp\": \"2026-07-30T13:48:14.461574+00:00\",\n    \"troubleshooting_tips\": \"See [https://docs.oracle.com/iaas/Content/API/References/apierrors.htm] for more information about resolving this error. If you are unable to resolve this issue, run this CLI command with --debug option and contact Oracle support and provide them the full error message.\"\n}\n",
+  "stdout": ""
+}

@@ -1,0 +1,96 @@
+{
+  "data": {
+    "available-kubernetes-upgrades": [
+      "v1.31.10",
+      "v1.32.10"
+    ],
+    "cluster-pod-network-options": [
+      {
+        "cni-type": "FLANNEL_OVERLAY"
+      }
+    ],
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2024-07-13T19:15:14.042Z"
+      }
+    },
+    "endpoint-config": {
+      "is-public-ip-enabled": false,
+      "nsg-ids": [],
+      "security-attributes": null,
+      "subnet-id": "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0002"
+    },
+    "endpoints": {
+      "ipv6-endpoint": null,
+      "kubernetes": null,
+      "private-endpoint": "10.0.10.74:6443",
+      "public-endpoint": null,
+      "vcn-hostname-endpoint": null
+    },
+    "freeform-tags": {},
+    "id": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001",
+    "image-policy-config": {
+      "is-policy-enabled": false,
+      "key-details": []
+    },
+    "kms-key-id": null,
+    "kubernetes-version": "v1.31.1",
+    "lifecycle-details": null,
+    "lifecycle-state": "ACTIVE",
+    "metadata": {
+      "created-by-user-id": "ocid1.user.oc1..aaaaexample0001",
+      "created-by-work-request-id": "ocid1.clustersworkrequest.oc1.ap-tokyo-1.aaaaexample0001",
+      "deleted-by-user-id": null,
+      "deleted-by-work-request-id": null,
+      "time-created": "2024-07-13T19:15:14+00:00",
+      "time-credential-expiration": "2029-07-13T19:15:52+00:00",
+      "time-deleted": null,
+      "time-updated": "2025-05-16T12:21:49+00:00",
+      "updated-by-user-id": "ocid1.user.oc1..aaaaexample0001",
+      "updated-by-work-request-id": "ocid1.clustersworkrequest.oc1.ap-tokyo-1.aaaaexample0002"
+    },
+    "name": "example-k8s-cluster",
+    "open-id-connect-discovery-endpoint": null,
+    "open-id-connect-discovery-key": null,
+    "options": {
+      "add-ons": {
+        "is-kubernetes-dashboard-enabled": false,
+        "is-tiller-enabled": false
+      },
+      "admission-controller-options": {
+        "is-pod-security-policy-enabled": false
+      },
+      "ip-families": [
+        "IPv4"
+      ],
+      "kubernetes-network-config": {
+        "pods-cidr": "10.0.0.0/16",
+        "services-cidr": "10.0.0.0/16"
+      },
+      "open-id-connect-discovery": null,
+      "open-id-connect-token-authentication-config": null,
+      "persistent-volume-config": {
+        "defined-tags": {},
+        "freeform-tags": {
+          "Cluster": "example-k8s-cluster"
+        }
+      },
+      "service-lb-config": {
+        "backend-nsg-ids": null,
+        "defined-tags": {},
+        "freeform-tags": {
+          "Cluster": "example-k8s-cluster"
+        }
+      },
+      "service-lb-subnet-ids": [
+        "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0003"
+      ]
+    },
+    "system-tags": {},
+    "type": "BASIC_CLUSTER",
+    "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0001"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

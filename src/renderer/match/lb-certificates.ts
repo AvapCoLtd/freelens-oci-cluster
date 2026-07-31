@@ -1,5 +1,5 @@
 import { X509Certificate } from "node:crypto";
-import type { OciLoadBalancer } from "../sdk/types";
+import type { OciLoadBalancer } from "../oci/types";
 
 export interface LbCertInfo {
   name: string;
@@ -15,7 +15,7 @@ export interface LbCertInfo {
 // publicCertificateはチェーン連結PEMのことがある。先頭ブロック(リーフ証明書)だけをパース対象にする。
 const FIRST_CERT_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/;
 
-function parsePem(pem: string | undefined): Pick<LbCertInfo, "validTo" | "subject" | "sans" | "parseError"> {
+function parsePem(pem: string | null | undefined): Pick<LbCertInfo, "validTo" | "subject" | "sans" | "parseError"> {
   const block = pem?.match(FIRST_CERT_BLOCK)?.[0];
   if (!block) return { parseError: true };
   try {
@@ -37,24 +37,25 @@ function parsePem(pem: string | undefined): Pick<LbCertInfo, "validTo" | "subjec
 export function lbCertificateRows(lb: OciLoadBalancer): LbCertInfo[] {
   const listenersByCert = new Map<string, string[]>();
   for (const [listenerName, listener] of Object.entries(lb.listeners ?? {})) {
-    const certName = (listener as { sslConfiguration?: { certificateName?: string } }).sslConfiguration
-      ?.certificateName;
+    const certName = listener["ssl-configuration"]?.["certificate-name"];
     if (!certName) continue;
     listenersByCert.set(certName, [...(listenersByCert.get(certName) ?? []), listenerName]);
   }
-  return Object.values(lb.certificates ?? {}).map((cert) => ({
-    name: cert.certificateName,
-    ...parsePem(cert.publicCertificate),
-    listenerNames: listenersByCert.get(cert.certificateName) ?? [],
-  }));
+  return Object.values(lb.certificates ?? {}).map((cert) => {
+    const name = cert["certificate-name"] ?? "(name unknown)";
+    return {
+      name,
+      ...parsePem(cert["public-certificate"]),
+      listenerNames: listenersByCert.get(name) ?? [],
+    };
+  });
 }
 
 /** listenerのcertificate-ids(Certificatesサービス方式)を重複なしで集める。期限はAPIで別途引く。 */
 export function managedCertificateIdsOf(lb: OciLoadBalancer): string[] {
   const ids = new Set<string>();
   for (const listener of Object.values(lb.listeners ?? {})) {
-    const certIds = (listener as { sslConfiguration?: { certificateIds?: string[] } }).sslConfiguration?.certificateIds;
-    for (const id of certIds ?? []) ids.add(id);
+    for (const id of listener["ssl-configuration"]?.["certificate-ids"] ?? []) ids.add(id);
   }
   return [...ids];
 }

@@ -1,0 +1,26 @@
+{
+  "data": [
+    {
+      "description": null,
+      "destination": null,
+      "destination-type": null,
+      "direction": "INGRESS",
+      "icmp-options": null,
+      "id": "F58B69",
+      "is-stateless": false,
+      "is-valid": true,
+      "protocol": "6",
+      "source": "0.0.0.0/0",
+      "source-type": "CIDR_BLOCK",
+      "tcp-options": {
+        "destination-port-range": {
+          "max": 22,
+          "min": 22
+        },
+        "source-port-range": null
+      },
+      "time-created": "2025-09-08T10:51:11.980000+00:00",
+      "udp-options": null
+    }
+  ]
+}

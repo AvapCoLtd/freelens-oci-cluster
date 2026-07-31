@@ -1,0 +1,12 @@
+{
+  "command": [
+    "search",
+    "resource",
+    "structured-search",
+    "--query-text",
+    "query cluster resources"
+  ],
+  "exit-code": 1,
+  "stderr": "ServiceError:\n{\n    \"client_version\": \"Oracle-PythonSDK/2.183.0, Oracle-PythonCLI/3.90.0\",\n    \"code\": \"CannotParseRequest\",\n    \"logging_tips\": \"Please run the OCI CLI command using --debug flag to find more debug information.\",\n    \"message\": \"Unknown resource type 'cluster'\",\n    \"opc-request-id\": \"EXAMPLEREQUESTID0001EXAMPLEREQ001/EXAMPLEREQUESTID0002EXAMPLEREQ002/EXAMPLEREQUESTID0003EXAMPLEREQ003\",\n    \"operation_name\": \"search_resources\",\n    \"request_endpoint\": \"POST https://query.ap-tokyo-1.oci.oraclecloud.com/20180409/resources\",\n    \"status\": 400,\n    \"target_service\": \"resource_search\",\n    \"timestamp\": \"2026-07-30T14:01:21.473835+00:00\",\n    \"troubleshooting_tips\": \"See [https://docs.oracle.com/iaas/Content/API/References/apierrors.htm] for more information about resolving this error. If you are unable to resolve this issue, run this CLI command with --debug option and contact Oracle support and provide them the full error message.\"\n}\n",
+  "stdout": ""
+}

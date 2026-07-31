@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ClusterOciData } from "../sdk/fetch";
-import type { OciResult } from "../sdk/result";
+import type { ClusterOciData } from "../fetch/fetch";
+import type { OciResult } from "../oci/result";
 import {
   buildNetworkView,
   clusterLbIds,
@@ -51,59 +51,59 @@ function baseData(overrides: Partial<ClusterOciData>): ClusterOciData {
   };
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: SDKモデルはフィールド任意のためテストデータは部分形で組む
+// biome-ignore lint/suspicious/noExplicitAny: 応答型はフィールド任意のためテストデータは部分形で組む
 function anyOk(data: unknown): any {
   return ok(data);
 }
 
 function richData(): ClusterOciData {
   return baseData({
-    cluster: anyOk({ id: "ocid1.cluster.oc1..c", endpointConfig: { subnetId: SUBNET_EP, nsgIds: [] } }),
+    cluster: anyOk({ id: "ocid1.cluster.oc1..c", "endpoint-config": { "subnet-id": SUBNET_EP, "nsg-ids": [] } }),
     nodePools: anyOk([
       {
         id: "ocid1.nodepool.oc1..p1",
         name: "pool-a",
-        subnetIds: [SUBNET_NODE],
-        nodeConfigDetails: { size: 3, placementConfigs: [{ subnetId: SUBNET_NODE }], nsgIds: [NSG_POOL] },
+        "subnet-ids": [SUBNET_NODE],
+        "node-config-details": { size: 3, "placement-configs": [{ "subnet-id": SUBNET_NODE }], "nsg-ids": [NSG_POOL] },
       },
     ]),
     nlbs: anyOk([
       {
         id: NLB_ID,
-        displayName: "nlb-1",
-        subnetId: SUBNET_LB,
-        networkSecurityGroupIds: [NSG_LB],
-        ipAddresses: [{ ipAddress: "10.0.0.1" }],
+        "display-name": "nlb-1",
+        "subnet-id": SUBNET_LB,
+        "network-security-group-ids": [NSG_LB],
+        "ip-addresses": [{ "ip-address": "10.0.0.1" }],
         listeners: { "TCP-80": { port: 80, protocol: "TCP" } },
-        backendSets: { "TCP-80": {} },
+        "backend-sets": { "TCP-80": {} },
       },
     ]),
     lbs: anyOk([
       {
         id: LB_ID,
-        displayName: "lb-1",
-        subnetIds: [SUBNET_LB],
-        networkSecurityGroupIds: [],
-        ipAddresses: [{ ipAddress: "10.0.0.2" }],
+        "display-name": "lb-1",
+        "subnet-ids": [SUBNET_LB],
+        "network-security-group-ids": [],
+        "ip-addresses": [{ "ip-address": "10.0.0.2" }],
         listeners: {},
-        backendSets: {},
+        "backend-sets": {},
       },
     ]),
     wafs: anyOk([
-      { id: WAF_ID, displayName: "waf-1", loadBalancerId: LB_ID },
+      { id: WAF_ID, "display-name": "waf-1", "load-balancer-id": LB_ID },
       {
         id: "ocid1.webappfirewall.oc1..other",
-        displayName: "waf-other",
-        loadBalancerId: "ocid1.loadbalancer.oc1..unrelated",
+        "display-name": "waf-other",
+        "load-balancer-id": "ocid1.loadbalancer.oc1..unrelated",
       },
     ]),
     subnets: {
       [SUBNET_LB]: anyOk({
         id: SUBNET_LB,
-        displayName: "lb-subnet",
-        cidrBlock: "10.0.0.0/24",
-        securityListIds: ["ocid1.securitylist.oc1..sl1"],
-        routeTableId: "ocid1.routetable.oc1..rt1",
+        "display-name": "lb-subnet",
+        "cidr-block": "10.0.0.0/24",
+        "security-list-ids": ["ocid1.securitylist.oc1..sl1"],
+        "route-table-id": "ocid1.routetable.oc1..rt1",
       }),
     },
   });
@@ -155,7 +155,7 @@ describe("clusterLbIds", () => {
     const data = richData();
     // NLB(10.0.0.1)はタグで関連。手動LB(タグなし)のbackendがNLBのIPを指す
     // biome-ignore lint/suspicious/noExplicitAny: テストデータ差し替え
-    (data.lbs as any).data[0].backendSets = { "TCP-443": { backends: [{ ipAddress: "10.0.0.1" }] } };
+    (data.lbs as any).data[0]["backend-sets"] = { "TCP-443": { backends: [{ "ip-address": "10.0.0.1" }] } };
     const ids = clusterLbIds({ taggedResources: anyOk([{ identifier: NLB_ID }]), nlbs: data.nlbs, lbs: data.lbs }, []);
     expect([...ids].sort()).toEqual([LB_ID, NLB_ID].sort());
   });
@@ -163,7 +163,7 @@ describe("clusterLbIds", () => {
   it("バックエンドがノードIPを指す手動LBを拾う(NodePort直結構成)", () => {
     const data = richData();
     // biome-ignore lint/suspicious/noExplicitAny: テストデータ差し替え
-    (data.lbs as any).data[0].backendSets = { "TCP-443": { backends: [{ ipAddress: "10.9.9.9" }] } };
+    (data.lbs as any).data[0]["backend-sets"] = { "TCP-443": { backends: [{ "ip-address": "10.9.9.9" }] } };
     const ids = clusterLbIds(
       { taggedResources: { ok: false, kind: "not_requested", raw: { message: "" } }, nlbs: data.nlbs, lbs: data.lbs },
       [],
@@ -232,7 +232,7 @@ describe("buildNetworkView", () => {
   it("endpointサブネットがノードサブネットと同一ならendpoint行を複製しない", () => {
     const data = richData();
     // biome-ignore lint/suspicious/noExplicitAny: テストデータ差し替え
-    (data.cluster as any).data.endpointConfig.subnetId = SUBNET_NODE;
+    (data.cluster as any).data["endpoint-config"]["subnet-id"] = SUBNET_NODE;
     const view = buildNetworkView(data);
     expect(view.endpointSubnetRow).toBeUndefined();
     expect(view.nodeSubnetRows[0]?.roles).toEqual(["node", "endpoint"]);

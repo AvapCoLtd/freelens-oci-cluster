@@ -1,0 +1,75 @@
+{
+  "data": [
+    {
+      "cluster-id": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001",
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "default/example-user@example.com",
+          "CreatedOn": "2024-07-13T19:22:20.977Z"
+        }
+      },
+      "freeform-tags": {},
+      "id": "ocid1.nodepool.oc1.ap-tokyo-1.aaaaexample0001",
+      "initial-node-labels": [],
+      "kubernetes-version": "v1.31.1",
+      "lifecycle-details": null,
+      "lifecycle-state": "ACTIVE",
+      "name": "example-k8s-pool",
+      "network-launch-type": null,
+      "node-config-details": {
+        "compute-cluster-id": null,
+        "defined-tags": {},
+        "freeform-tags": {},
+        "is-pv-encryption-in-transit-enabled": false,
+        "kms-key-id": "",
+        "node-pool-pod-network-option-details": {
+          "cni-type": "FLANNEL_OVERLAY"
+        },
+        "nsg-ids": [],
+        "placement-configs": [
+          {
+            "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+            "capacity-reservation-id": null,
+            "fault-domains": null,
+            "host-group-id": null,
+            "preemptible-node-config": null,
+            "subnet-id": "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0001"
+          }
+        ],
+        "size": 3
+      },
+      "node-eviction-node-pool-settings": {
+        "eviction-grace-duration": "PT1H",
+        "is-force-action-after-grace-duration": null,
+        "is-force-delete-after-grace-duration": false
+      },
+      "node-image-id": "ocid1.image.oc1.ap-tokyo-1.aaaaexample0001",
+      "node-image-name": "Oracle-Linux-8.10-2025.02.28-0-OKE-1.31.1-760",
+      "node-pool-cycling-details": null,
+      "node-shape": "VM.Standard.E3.Flex",
+      "node-shape-config": {
+        "memory-in-gbs": 16.0,
+        "ocpus": 1.0
+      },
+      "node-source": {
+        "image-id": "ocid1.image.oc1.ap-tokyo-1.aaaaexample0001",
+        "source-name": "Oracle-Linux-8.10-2025.02.28-0-OKE-1.31.1-760",
+        "source-type": "IMAGE"
+      },
+      "node-source-details": {
+        "boot-volume-size-in-gbs": 150,
+        "image-id": "ocid1.image.oc1.ap-tokyo-1.aaaaexample0001",
+        "source-type": "IMAGE"
+      },
+      "primary-vnic": null,
+      "quantity-per-subnet": 0,
+      "secondary-vnics": null,
+      "ssh-public-key": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABexamplekeymaterial example",
+      "subnet-ids": [
+        "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0001"
+      ],
+      "system-tags": null
+    }
+  ]
+}

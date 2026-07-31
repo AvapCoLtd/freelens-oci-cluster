@@ -2,9 +2,11 @@ import { Common } from "@freelensapp/extensions";
 import { action, makeObservable, observable } from "mobx";
 
 interface PreferencesModel {
-  // ociCommandはCLI時代の設定(SDK移行で廃止)。読み捨てるがファイルからは消さない(設計 Decision #16)。
+  // ociCommand/authCommandは廃止済みの設定。読み捨てるがファイルからは消さない。
+  // authCommandの値は認証情報JSONを返すコマンドであり、ociコマンドとして実行してはならない。
   ociCommand?: string;
-  authCommand: string;
+  authCommand?: string;
+  ociCliCommand: string;
   nodePollingEnabled: boolean;
   nodePollingIntervalSeconds: number;
 }
@@ -12,7 +14,7 @@ interface PreferencesModel {
 export const POLLING_INTERVAL_DEFAULT_SECONDS = 60;
 export const POLLING_INTERVAL_MIN_SECONDS = 30;
 
-/** ポーリング間隔の正規化(設計 Decision #14: 下限30秒、不正値は既定60秒に丸め)。 */
+/** ポーリング間隔の正規化(下限30秒、不正値は既定60秒に丸め)。 */
 export function normalizePollingInterval(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return POLLING_INTERVAL_DEFAULT_SECONDS;
   return Math.max(POLLING_INTERVAL_MIN_SECONDS, Math.floor(value));
@@ -30,32 +32,33 @@ const ExtensionStoreBase = Common.Store.ExtensionStore as unknown as new (params
 }) => ExtensionStoreInstance;
 
 /**
- * 設計 Decision #2/#16: 認証情報コマンド文字列をFreeLensの拡張向け永続化機構(ExtensionStore)で保存する。
- * 秘密そのもの(鍵・トークン・認証JSON)はここに入れてはならない(設計 Decision #3)。
+ * oci CLIの呼び出しコマンド文字列と自動更新設定をFreeLensの拡張向け永続化機構(ExtensionStore)で保存する。
+ * 鍵・トークン・認証JSONはここに入れてはならない(認証はociコマンド側で完結する)。
  * loadExtension(extension)はmain/renderer両方のonActivateから一度ずつ呼ぶ
  * (mainを欠くとフレーム間同期が壊れ旧値がファイルへ書き戻る。詳細: docs/extension-api.md)。
  */
 export class OciPreferencesStore extends ExtensionStoreBase {
-  authCommand = "";
+  ociCliCommand = "";
   nodePollingEnabled = false;
   nodePollingIntervalSeconds = POLLING_INTERVAL_DEFAULT_SECONDS;
 
   private legacyOciCommand = "";
+  private legacyAuthCommand = "";
 
   constructor() {
     super({ configName: "preferences" });
     makeObservable(this, {
-      authCommand: observable,
+      ociCliCommand: observable,
       nodePollingEnabled: observable,
       nodePollingIntervalSeconds: observable,
-      setAuthCommand: action,
+      setOciCliCommand: action,
       setNodePollingEnabled: action,
       setNodePollingIntervalSeconds: action,
     });
   }
 
-  setAuthCommand(value: string): void {
-    this.authCommand = value;
+  setOciCliCommand(value: string): void {
+    this.ociCliCommand = value;
   }
 
   setNodePollingEnabled(value: boolean): void {
@@ -67,19 +70,21 @@ export class OciPreferencesStore extends ExtensionStoreBase {
   }
 
   fromStore(data: Partial<PreferencesModel>): void {
-    this.authCommand = data.authCommand ?? "";
+    this.ociCliCommand = data.ociCliCommand ?? "";
     this.nodePollingEnabled = data.nodePollingEnabled ?? false;
     this.nodePollingIntervalSeconds = normalizePollingInterval(data.nodePollingIntervalSeconds);
     this.legacyOciCommand = data.ociCommand ?? "";
+    this.legacyAuthCommand = data.authCommand ?? "";
   }
 
   toJSON(): PreferencesModel {
-    const model: PreferencesModel = {
-      authCommand: this.authCommand,
+    return {
+      ...(this.legacyOciCommand.length > 0 ? { ociCommand: this.legacyOciCommand } : {}),
+      ...(this.legacyAuthCommand.length > 0 ? { authCommand: this.legacyAuthCommand } : {}),
+      ociCliCommand: this.ociCliCommand,
       nodePollingEnabled: this.nodePollingEnabled,
       nodePollingIntervalSeconds: this.nodePollingIntervalSeconds,
     };
-    return this.legacyOciCommand.length > 0 ? { ociCommand: this.legacyOciCommand, ...model } : model;
   }
 }
 

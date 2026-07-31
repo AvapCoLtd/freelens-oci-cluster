@@ -1,0 +1,12 @@
+{
+  "command": [
+    "compute",
+    "instance",
+    "get",
+    "--bogus-flag",
+    "x"
+  ],
+  "exit-code": 2,
+  "stderr": "",
+  "stdout": "Usage: oci compute instance get [OPTIONS]\n\nError: No such option: --bogus-flag\n\nFor OCI CLI commands and parameters suggestion, auto completion and other useful features, try the Interactive mode by typing `oci -i`.\n"
+}

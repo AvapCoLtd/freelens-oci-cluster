@@ -1,24 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { OciNsgRule, OciRouteTable, OciSecurityList } from "../sdk/types";
+import type { OciNsgRule, OciRouteTable, OciSecurityList } from "../oci/types";
 import { nsgRuleRows, protocolLabel, routeRows, securityListRuleRows } from "./rule-rows";
 
 describe("securityListRuleRows", () => {
   it("ingress/egressをdirection付きで平坦化し、ポート範囲を整形する", () => {
-    const sl = {
-      ingressSecurityRules: [
+    const sl: OciSecurityList = {
+      "ingress-security-rules": [
         {
           source: "0.0.0.0/0",
           protocol: "6",
-          isStateless: false,
-          tcpOptions: { destinationPortRange: { min: 30000, max: 32767 } },
+          "is-stateless": false,
+          "tcp-options": { "destination-port-range": { min: 30000, max: 32767 } },
           description: "NodePort",
         },
         { source: "10.0.0.0/16", protocol: "all" },
       ],
-      egressSecurityRules: [
-        { destination: "0.0.0.0/0", protocol: "17", udpOptions: { destinationPortRange: { min: 53, max: 53 } } },
+      "egress-security-rules": [
+        { destination: "0.0.0.0/0", protocol: "17", "udp-options": { "destination-port-range": { min: 53, max: 53 } } },
       ],
-    } as unknown as OciSecurityList;
+    };
     expect(securityListRuleRows(sl)).toEqual([
       {
         direction: "ingress",
@@ -48,21 +48,21 @@ describe("securityListRuleRows", () => {
   });
 
   it("ルール配列が無くてもthrowしない", () => {
-    expect(securityListRuleRows({} as OciSecurityList)).toEqual([]);
+    expect(securityListRuleRows({})).toEqual([]);
   });
 });
 
 describe("nsgRuleRows", () => {
   it("EGRESSはdestination、INGRESSはsourceをpeerにする", () => {
-    const rules = [
+    const rules: OciNsgRule[] = [
       {
         direction: "INGRESS",
         protocol: "6",
         source: "1.2.3.4/32",
-        tcpOptions: { destinationPortRange: { min: 443, max: 443 } },
+        "tcp-options": { "destination-port-range": { min: 443, max: 443 } },
       },
       { direction: "EGRESS", protocol: "all", destination: "0.0.0.0/0" },
-    ] as unknown as OciNsgRule[];
+    ];
     expect(nsgRuleRows(rules)).toEqual([
       {
         direction: "ingress",
@@ -79,12 +79,12 @@ describe("nsgRuleRows", () => {
 
 describe("routeRows", () => {
   it("宛先エンティティ種別をOCIDから表示名にする", () => {
-    const rt = {
-      routeRules: [
-        { destination: "0.0.0.0/0", networkEntityId: "ocid1.natgateway.oc1..x" },
-        { destination: "192.168.100.0/24", networkEntityId: "ocid1.drg.oc1..y", description: "to onprem" },
+    const rt: OciRouteTable = {
+      "route-rules": [
+        { destination: "0.0.0.0/0", "network-entity-id": "ocid1.natgateway.oc1..x" },
+        { destination: "192.168.100.0/24", "network-entity-id": "ocid1.drg.oc1..y", description: "to onprem" },
       ],
-    } as unknown as OciRouteTable;
+    };
     expect(routeRows(rt)).toEqual([
       {
         destination: "0.0.0.0/0",

@@ -1,4 +1,4 @@
-import type { OciInstance, OciNodePoolSummary } from "../sdk/types";
+import type { OciInstance, OciNodePoolSummary } from "../oci/types";
 
 const NODEPOOL_OCID_PREFIX = "ocid1.nodepool.";
 
@@ -7,7 +7,7 @@ const NODEPOOL_OCID_PREFIX = "ocid1.nodepool.";
  * virtual node / self-managed nodeはCreatedByがnodepool形式にならないためundefined(プール列は「-」表示)。
  */
 export function nodePoolIdOfInstance(instance: OciInstance | undefined): string | undefined {
-  const createdBy = instance?.definedTags?.["Oracle-Tags"]?.CreatedBy;
+  const createdBy = instance?.["defined-tags"]?.["Oracle-Tags"]?.CreatedBy;
   if (typeof createdBy !== "string" || !createdBy.startsWith(NODEPOOL_OCID_PREFIX)) return undefined;
   return createdBy;
 }

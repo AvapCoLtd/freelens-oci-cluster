@@ -1,0 +1,59 @@
+{
+  "data": {
+    "compartment-id": null,
+    "defined-tags": {},
+    "destination-region": null,
+    "display-name": "silver",
+    "freeform-tags": {},
+    "id": "ocid1.volumebackuppolicy.oc1..aaaaexample0001",
+    "schedules": [
+      {
+        "backup-type": "INCREMENTAL",
+        "day-of-month": null,
+        "day-of-week": null,
+        "hour-of-day": null,
+        "is-prevent-deletion-enabled": null,
+        "is-retention-lock-enabled": null,
+        "month": null,
+        "offset-seconds": 0,
+        "offset-type": null,
+        "period": "ONE_WEEK",
+        "retention-period": null,
+        "retention-seconds": 2419200,
+        "time-zone": "REGIONAL_DATA_CENTER_TIME"
+      },
+      {
+        "backup-type": "INCREMENTAL",
+        "day-of-month": null,
+        "day-of-week": null,
+        "hour-of-day": null,
+        "is-prevent-deletion-enabled": null,
+        "is-retention-lock-enabled": null,
+        "month": null,
+        "offset-seconds": 0,
+        "offset-type": null,
+        "period": "ONE_MONTH",
+        "retention-period": null,
+        "retention-seconds": 31557600,
+        "time-zone": "REGIONAL_DATA_CENTER_TIME"
+      },
+      {
+        "backup-type": "INCREMENTAL",
+        "day-of-month": null,
+        "day-of-week": null,
+        "hour-of-day": null,
+        "is-prevent-deletion-enabled": null,
+        "is-retention-lock-enabled": null,
+        "month": null,
+        "offset-seconds": 0,
+        "offset-type": null,
+        "period": "ONE_YEAR",
+        "retention-period": null,
+        "retention-seconds": 157680000,
+        "time-zone": "REGIONAL_DATA_CENTER_TIME"
+      }
+    ],
+    "time-created": "2017-10-01T00:00:00.001000+00:00"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

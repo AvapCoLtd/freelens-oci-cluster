@@ -1,5 +1,5 @@
-import type { ClusterOciData } from "../sdk/fetch";
-import type { OciLoadBalancer, OciNetworkLoadBalancerSummary, OciWafSummary } from "../sdk/types";
+import type { ClusterOciData } from "../fetch/fetch";
+import type { OciLoadBalancer, OciNetworkLoadBalancerSummary, OciWafSummary } from "../oci/types";
 import { type GatewayKind, gatewayKindOf, ocidTypeSegment } from "./gateway-status";
 import { type LbCertInfo, lbCertificateRows, managedCertificateIdsOf } from "./lb-certificates";
 
@@ -63,17 +63,18 @@ function listenersOf(record: Record<string, { port?: number; protocol?: string }
 }
 
 function lbRowOfNlb(nlb: OciNetworkLoadBalancerSummary): LbRow {
+  const subnetId = nlb["subnet-id"];
   return {
     id: nlb.id,
     kind: "nlb",
-    displayName: nlb.displayName,
-    lifecycleState: nlb.lifecycleState,
-    ips: (nlb.ipAddresses ?? []).map((ip) => ip.ipAddress).filter((ip): ip is string => !!ip),
-    isPrivate: nlb.isPrivate,
-    subnetIds: nlb.subnetId ? [nlb.subnetId] : [],
-    nsgIds: nlb.networkSecurityGroupIds ?? [],
+    displayName: nlb["display-name"],
+    lifecycleState: nlb["lifecycle-state"],
+    ips: (nlb["ip-addresses"] ?? []).map((ip) => ip["ip-address"]).filter((ip): ip is string => !!ip),
+    isPrivate: nlb["is-private"],
+    subnetIds: subnetId ? [subnetId] : [],
+    nsgIds: nlb["network-security-group-ids"] ?? [],
     listeners: listenersOf(nlb.listeners),
-    backendSetNames: Object.keys(nlb.backendSets ?? {}),
+    backendSetNames: Object.keys(nlb["backend-sets"] ?? {}),
     certificates: [],
     managedCertificateIds: [],
   };
@@ -83,23 +84,17 @@ function lbRowOfLb(lb: OciLoadBalancer): LbRow {
   return {
     id: lb.id,
     kind: "lb",
-    displayName: lb.displayName,
-    lifecycleState: lb.lifecycleState,
-    ips: (lb.ipAddresses ?? []).map((ip) => ip.ipAddress).filter((ip): ip is string => !!ip),
-    isPrivate: lb.isPrivate,
-    subnetIds: lb.subnetIds ?? [],
-    nsgIds: lb.networkSecurityGroupIds ?? [],
+    displayName: lb["display-name"],
+    lifecycleState: lb["lifecycle-state"],
+    ips: (lb["ip-addresses"] ?? []).map((ip) => ip["ip-address"]).filter((ip): ip is string => !!ip),
+    isPrivate: lb["is-private"],
+    subnetIds: lb["subnet-ids"] ?? [],
+    nsgIds: lb["network-security-group-ids"] ?? [],
     listeners: listenersOf(lb.listeners),
-    backendSetNames: Object.keys(lb.backendSets ?? {}),
+    backendSetNames: Object.keys(lb["backend-sets"] ?? {}),
     certificates: lbCertificateRows(lb),
     managedCertificateIds: managedCertificateIdsOf(lb),
   };
-}
-
-// WebAppFirewallSummaryのloadBalancerIdはLOAD_BALANCERサブタイプのみ持つ(union型のため構造で読む)。
-function wafTargetLbId(waf: OciWafSummary): string | undefined {
-  const id = (waf as { loadBalancerId?: unknown }).loadBalancerId;
-  return typeof id === "string" ? id : undefined;
 }
 
 function subnetRow(data: ClusterOciData, subnetId: string, roles: SubnetRole[]): SubnetRow {
@@ -110,12 +105,12 @@ function subnetRow(data: ClusterOciData, subnetId: string, roles: SubnetRole[]):
   return {
     subnetId,
     roles,
-    vcnId: subnet.data.vcnId,
-    displayName: subnet.data.displayName,
-    cidrBlock: subnet.data.cidrBlock,
-    prohibitPublicIpOnVnic: subnet.data.prohibitPublicIpOnVnic,
-    securityListIds: subnet.data.securityListIds ?? [],
-    routeTableId: subnet.data.routeTableId,
+    vcnId: subnet.data["vcn-id"],
+    displayName: subnet.data["display-name"],
+    cidrBlock: subnet.data["cidr-block"],
+    prohibitPublicIpOnVnic: subnet.data["prohibit-public-ip-on-vnic"],
+    securityListIds: subnet.data["security-list-ids"] ?? [],
+    routeTableId: subnet.data["route-table-id"],
   };
 }
 
@@ -135,7 +130,7 @@ export function internalIpsOfNodes(
 }
 
 interface BackendSetsLike {
-  [name: string]: { backends?: { ipAddress?: string }[] } | undefined;
+  [name: string]: { backends?: { "ip-address"?: string }[] } | undefined;
 }
 
 interface LbEntry {
@@ -146,14 +141,14 @@ interface LbEntry {
 
 function toLbEntry(
   id: string,
-  ips: ({ ipAddress?: string } | undefined)[] | undefined,
+  ips: ({ "ip-address"?: string } | undefined)[] | undefined,
   backendSets: BackendSetsLike | undefined,
 ): LbEntry {
   return {
     id,
-    ips: (ips ?? []).map((ip) => ip?.ipAddress).filter((ip): ip is string => !!ip),
+    ips: (ips ?? []).map((ip) => ip?.["ip-address"]).filter((ip): ip is string => !!ip),
     backendIps: Object.values(backendSets ?? {}).flatMap((set) =>
-      (set?.backends ?? []).map((backend) => backend.ipAddress).filter((ip): ip is string => !!ip),
+      (set?.backends ?? []).map((backend) => backend["ip-address"]).filter((ip): ip is string => !!ip),
     ),
   };
 }
@@ -161,10 +156,10 @@ function toLbEntry(
 /**
  * クラスタ関連LB/NLBの判定(compartment内の無関係なLBを経路表示から除外する)。
  * 判定は3経路の和集合。
- * 1. CreatedByタグ=クラスタOCID(既存設計の経路4)
- * 2. ServiceのingressIP照合(経路2)
+ * 1. CreatedByタグ=クラスタOCID
+ * 2. ServiceのingressIPとLBのIP照合
  * 3. バックエンドIPがノードまたは判定済みクラスタ関連LBのIPを指すLB(2段LB構成: 手動WAF用LB→ingress NLB→ノード。
- *    FujitaKankoで実在確認)。連鎖があるため固定点まで展開する
+ *    実テナンシで実在確認)。連鎖があるため固定点まで展開する
  */
 export function clusterLbIds(
   data: Pick<ClusterOciData, "taggedResources" | "nlbs" | "lbs">,
@@ -178,12 +173,8 @@ export function clusterLbIds(
   );
   const serviceIpSet = new Set(serviceIngressIps);
   const entries: LbEntry[] = [
-    ...(data.nlbs.ok
-      ? data.nlbs.data.map((nlb) => toLbEntry(nlb.id, nlb.ipAddresses, nlb.backendSets as BackendSetsLike))
-      : []),
-    ...(data.lbs.ok
-      ? data.lbs.data.map((lb) => toLbEntry(lb.id, lb.ipAddresses, lb.backendSets as BackendSetsLike))
-      : []),
+    ...(data.nlbs.ok ? data.nlbs.data.map((nlb) => toLbEntry(nlb.id, nlb["ip-addresses"], nlb["backend-sets"])) : []),
+    ...(data.lbs.ok ? data.lbs.data.map((lb) => toLbEntry(lb.id, lb["ip-addresses"], lb["backend-sets"])) : []),
   ];
 
   const related = new Set<string>();
@@ -214,14 +205,15 @@ function filterByLbIds<T extends { id: string }>(items: T[], lbIds: ReadonlySet<
   return lbIds ? items.filter((item) => lbIds.has(item.id)) : items;
 }
 
-/** ノードプール由来のsubnet OCID集合(pool.subnetIds + placementConfigs.subnetId)。 */
+/** ノードプール由来のsubnet OCID集合(pool.subnet-ids + placement-configs.subnet-id)。 */
 function nodePoolSubnetIds(nodePools: ClusterOciData["nodePools"]): Set<string> {
   const ids = new Set<string>();
   if (!nodePools.ok) return ids;
   for (const pool of nodePools.data) {
-    for (const id of pool.subnetIds ?? []) ids.add(id);
-    for (const placement of pool.nodeConfigDetails?.placementConfigs ?? []) {
-      if (placement.subnetId) ids.add(placement.subnetId);
+    for (const id of pool["subnet-ids"] ?? []) ids.add(id);
+    for (const placement of pool["node-config-details"]?.["placement-configs"] ?? []) {
+      const subnetId = placement["subnet-id"];
+      if (subnetId) ids.add(subnetId);
     }
   }
   return ids;
@@ -232,7 +224,7 @@ function nodePoolNsgIds(nodePools: ClusterOciData["nodePools"]): Set<string> {
   const ids = new Set<string>();
   if (!nodePools.ok) return ids;
   for (const pool of nodePools.data) {
-    for (const id of pool.nodeConfigDetails?.nsgIds ?? []) ids.add(id);
+    for (const id of pool["node-config-details"]?.["nsg-ids"] ?? []) ids.add(id);
   }
   return ids;
 }
@@ -243,10 +235,15 @@ export function collectSubnetIds(
   lbIds?: ReadonlySet<string>,
 ): string[] {
   const ids = nodePoolSubnetIds(data.nodePools);
-  if (data.cluster.ok && data.cluster.data.endpointConfig?.subnetId) ids.add(data.cluster.data.endpointConfig.subnetId);
-  if (data.nlbs.ok) for (const nlb of filterByLbIds(data.nlbs.data, lbIds)) if (nlb.subnetId) ids.add(nlb.subnetId);
+  const endpointSubnetId = data.cluster.ok ? data.cluster.data["endpoint-config"]?.["subnet-id"] : undefined;
+  if (endpointSubnetId) ids.add(endpointSubnetId);
+  if (data.nlbs.ok)
+    for (const nlb of filterByLbIds(data.nlbs.data, lbIds)) {
+      const subnetId = nlb["subnet-id"];
+      if (subnetId) ids.add(subnetId);
+    }
   if (data.lbs.ok)
-    for (const lb of filterByLbIds(data.lbs.data, lbIds)) for (const id of lb.subnetIds ?? []) ids.add(id);
+    for (const lb of filterByLbIds(data.lbs.data, lbIds)) for (const id of lb["subnet-ids"] ?? []) ids.add(id);
   return [...ids];
 }
 
@@ -256,13 +253,13 @@ export function collectNsgIds(
   lbIds?: ReadonlySet<string>,
 ): string[] {
   const ids = nodePoolNsgIds(data.nodePools);
-  if (data.cluster.ok) for (const id of data.cluster.data.endpointConfig?.nsgIds ?? []) ids.add(id);
+  if (data.cluster.ok) for (const id of data.cluster.data["endpoint-config"]?.["nsg-ids"] ?? []) ids.add(id);
   if (data.nlbs.ok)
     for (const nlb of filterByLbIds(data.nlbs.data, lbIds))
-      for (const id of nlb.networkSecurityGroupIds ?? []) ids.add(id);
+      for (const id of nlb["network-security-group-ids"] ?? []) ids.add(id);
   if (data.lbs.ok)
     for (const lb of filterByLbIds(data.lbs.data, lbIds))
-      for (const id of lb.networkSecurityGroupIds ?? []) ids.add(id);
+      for (const id of lb["network-security-group-ids"] ?? []) ids.add(id);
   return [...ids];
 }
 
@@ -279,21 +276,21 @@ export function buildNetworkView(data: ClusterOciData, lbIds?: ReadonlySet<strin
   const lbById = new Map(lbRows.map((row) => [row.id, row]));
 
   const wafRows: WafRow[] = (data.wafs.ok ? data.wafs.data : [])
-    .map((waf) => ({ waf, targetLbId: wafTargetLbId(waf) }))
+    .map((waf) => ({ waf, targetLbId: waf["load-balancer-id"] }))
     .filter(
       (entry): entry is { waf: OciWafSummary; targetLbId: string } =>
         !!entry.targetLbId && lbById.has(entry.targetLbId),
     )
     .map(({ waf, targetLbId }) => ({
       id: waf.id,
-      displayName: waf.displayName,
-      lifecycleState: waf.lifecycleState,
-      policyId: waf.webAppFirewallPolicyId,
+      displayName: waf["display-name"],
+      lifecycleState: waf["lifecycle-state"],
+      policyId: waf["web-app-firewall-policy-id"],
       targetLbId,
       targetLbName: lbById.get(targetLbId)?.displayName,
     }));
 
-  const endpointSubnetId = data.cluster.ok ? data.cluster.data.endpointConfig?.subnetId : undefined;
+  const endpointSubnetId = data.cluster.ok ? data.cluster.data["endpoint-config"]?.["subnet-id"] : undefined;
 
   const nodeSubnetIds = nodePoolSubnetIds(data.nodePools);
   const lbSubnetIds = new Set<string>(lbRows.flatMap((row) => row.subnetIds));
@@ -318,7 +315,7 @@ export function buildNetworkView(data: ClusterOciData, lbIds?: ReadonlySet<strin
         ? subnetRow(data, endpointSubnetId, ["endpoint"])
         : undefined,
     nodeNsgIds: [...nodePoolNsgIds(data.nodePools)],
-    endpointNsgIds: data.cluster.ok ? (data.cluster.data.endpointConfig?.nsgIds ?? []) : [],
+    endpointNsgIds: data.cluster.ok ? (data.cluster.data["endpoint-config"]?.["nsg-ids"] ?? []) : [],
   };
 }
 

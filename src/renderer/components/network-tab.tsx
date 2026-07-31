@@ -1,6 +1,7 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type * as React from "react";
+import type { ClusterOciData } from "../fetch/fetch";
 import { type DnsMatchKind, matchDnsToLbs } from "../match/dns-check";
 import { gatewayHealth, isSupportedGatewayId } from "../match/gateway-status";
 import { daysUntil } from "../match/lb-certificates";
@@ -15,8 +16,7 @@ import {
 import { nsgRuleRows, routeRows, securityListRuleRows } from "../match/rule-rows";
 import { ingressIpsOfServices } from "../match/service-lb";
 import { wafDefaultAction, wafPolicyRuleRows } from "../match/waf-policy";
-import type { ClusterOciData } from "../sdk/fetch";
-import type { OciResult } from "../sdk/result";
+import type { OciResult } from "../oci/result";
 import { backendHealthKey, ociClusterStore } from "../store/oci-cluster-store";
 import { ConsoleButton } from "./console-button";
 import { EmptyState, LOADING_LABEL } from "./empty-state";
@@ -105,13 +105,13 @@ function SlBlock({ ctx, slId }: { ctx: SectionContext; slId: string }) {
   const result = ctx.data.securityLists[slId];
   return (
     <NamedDetailBlock
-      label={`Security List: ${result?.ok ? (result.data.displayName ?? slId) : slId}`}
+      label={`Security List: ${result?.ok ? (result.data["display-name"] ?? slId) : slId}`}
       ocid={slId}
       actions={
         ctx.region &&
         result?.ok &&
-        result.data.vcnId && (
-          <ConsoleButton type="security-list" ocid={slId} region={ctx.region} parentId={result.data.vcnId} />
+        result.data["vcn-id"] && (
+          <ConsoleButton type="security-list" ocid={slId} region={ctx.region} parentId={result.data["vcn-id"]} />
         )
       }
       result={result}
@@ -138,13 +138,13 @@ function RtBlock({ ctx, rtId }: { ctx: SectionContext; rtId: string }) {
   const result = ctx.data.routeTables[rtId];
   return (
     <NamedDetailBlock
-      label={`Route Table: ${result?.ok ? (result.data.displayName ?? rtId) : rtId}`}
+      label={`Route Table: ${result?.ok ? (result.data["display-name"] ?? rtId) : rtId}`}
       ocid={rtId}
       actions={
         ctx.region &&
         result?.ok &&
-        result.data.vcnId && (
-          <ConsoleButton type="route-table" ocid={rtId} region={ctx.region} parentId={result.data.vcnId} />
+        result.data["vcn-id"] && (
+          <ConsoleButton type="route-table" ocid={rtId} region={ctx.region} parentId={result.data["vcn-id"]} />
         )
       }
       result={result}
@@ -162,13 +162,13 @@ function NsgBlock({ ctx, nsgId }: { ctx: SectionContext; nsgId: string }) {
   const result = ctx.data.nsgs[nsgId];
   return (
     <NamedDetailBlock
-      label={`NSG: ${result?.ok ? (result.data.nsg.displayName ?? nsgId) : nsgId}`}
+      label={`NSG: ${result?.ok ? (result.data.nsg["display-name"] ?? nsgId) : nsgId}`}
       ocid={nsgId}
       actions={
         ctx.region &&
         result?.ok &&
-        result.data.nsg.vcnId && (
-          <ConsoleButton type="nsg" ocid={nsgId} region={ctx.region} parentId={result.data.nsg.vcnId} />
+        result.data.nsg["vcn-id"] && (
+          <ConsoleButton type="nsg" ocid={nsgId} region={ctx.region} parentId={result.data.nsg["vcn-id"]} />
         )
       }
       result={result}
@@ -438,7 +438,7 @@ function WafPolicyDetail({ ctx, policyId }: { ctx: SectionContext; policyId: str
   const result = ctx.data.wafPolicies[policyId];
   return (
     <NamedDetailBlock
-      label={`Policy: ${result?.ok ? result.data.displayName : policyId}`}
+      label={`Policy: ${result?.ok ? result.data["display-name"] : policyId}`}
       ocid={policyId}
       actions={ctx.region && <ConsoleButton type="waf-policy" ocid={policyId} region={ctx.region} />}
       result={result}

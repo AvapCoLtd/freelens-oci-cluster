@@ -1,6 +1,6 @@
-import type { OciRouteTable } from "../sdk/types";
+import type { OciRouteTable } from "../oci/types";
 
-/** ゲートウェイ種別を問わない状態の共通形(sdk/fetch.fetchGatewayStatusが各getの応答から詰める)。 */
+/** ゲートウェイ種別を問わない状態の共通形(fetch/fetch.fetchGatewayStatusが各getの応答から詰める)。 */
 export interface OciGatewayStatusView {
   kind: string;
   displayName?: string;
@@ -43,8 +43,9 @@ export function isSupportedGatewayId(networkEntityId: string | undefined): netwo
 export function gatewayIdsOfRouteTables(routeTables: OciRouteTable[]): string[] {
   const ids = new Set<string>();
   for (const rt of routeTables) {
-    for (const rule of rt.routeRules ?? []) {
-      if (isSupportedGatewayId(rule.networkEntityId)) ids.add(rule.networkEntityId);
+    for (const rule of rt["route-rules"] ?? []) {
+      const entityId = rule["network-entity-id"];
+      if (isSupportedGatewayId(entityId)) ids.add(entityId);
     }
   }
   return [...ids];

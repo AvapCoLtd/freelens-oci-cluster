@@ -67,12 +67,10 @@ export default defineConfig({
     resolve: {
       // MOCK=1時のみ、OCI取得層(ociClusterStore)をmock/oci-cluster-store.mock.tsに差し替える
       // (README用スクリーンショット撮影専用。mock/はgitignore対象でsrc/は無変更)。
-      alias: [
-        { find: "isomorphic-fetch", replacement: resolve(__dirname, "build/fetch-global-shim.js") },
-        ...(process.env.MOCK === "1"
+      alias:
+        process.env.MOCK === "1"
           ? [{ find: /^\.+\/store\/oci-cluster-store$/, replacement: resolve(__dirname, "mock/oci-cluster-store.mock.ts") }]
-          : []),
-      ],
+          : [],
     },
     build: {
       lib: {

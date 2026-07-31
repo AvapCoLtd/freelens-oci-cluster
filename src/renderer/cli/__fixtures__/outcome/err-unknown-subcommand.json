@@ -1,0 +1,9 @@
+{
+  "command": [
+    "compute",
+    "bogus-subcommand"
+  ],
+  "exit-code": 2,
+  "stderr": "",
+  "stdout": "Usage: oci compute [OPTIONS] COMMAND [ARGS]...\n\nError: No such command 'bogus-subcommand'.\n\nFor OCI CLI commands and parameters suggestion, auto completion and other useful features, try the Interactive mode by typing `oci -i`.\n"
+}

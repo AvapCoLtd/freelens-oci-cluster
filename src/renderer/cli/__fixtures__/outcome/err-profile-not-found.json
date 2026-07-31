@@ -1,0 +1,16 @@
+{
+  "command": [
+    "--profile",
+    "NOSUCHPROFILE",
+    "compute",
+    "instance",
+    "list",
+    "--compartment-id",
+    "ocid1.compartment.oc1..aaaaexample0003",
+    "--output",
+    "json"
+  ],
+  "exit-code": 1,
+  "stderr": "ERROR: Profile 'NOSUCHPROFILE' not found in config file /home/user/.oci/config For more info about config file and how to get required information, see https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm\n",
+  "stdout": ""
+}

@@ -18,14 +18,21 @@ const DETAIL_CELL_STYLE: React.CSSProperties = {
   background: "var(--layoutBackground, #24272b)",
 };
 
-// inline styleは:hoverを表現できないため、モジュール読み込み時に1度だけスタイルを注入する。
-// 色はFreeLens標準テーブルの選択行と同じCSS変数に寄せる。
+// inline styleは:hoverを表現できないためスタイルを注入する。色はFreeLens標準テーブルの選択行と同じCSS変数に寄せる。
 const HOVER_CLASS = "oci-expandable-row";
-if (typeof document !== "undefined" && !document.getElementById(HOVER_CLASS)) {
+
+/** 拡張機能の有効化時に呼ぶ。既に注入済みなら何もしない(冪等)。 */
+export function ensureExpandableRowStyle(): void {
+  if (typeof document === "undefined" || document.getElementById(HOVER_CLASS)) return;
   const style = document.createElement("style");
   style.id = HOVER_CLASS;
   style.textContent = `.${HOVER_CLASS}:hover { background: var(--tableSelectedRowBackground, rgba(255, 255, 255, 0.06)); }`;
   document.head.appendChild(style);
+}
+
+/** 拡張機能の無効化時に呼ぶ。未注入なら何もしない(冪等)。 */
+export function removeExpandableRowStyle(): void {
+  document.getElementById(HOVER_CLASS)?.remove();
 }
 
 const TOGGLE_BUTTON_STYLE: React.CSSProperties = {
@@ -40,7 +47,7 @@ const TOGGLE_BUTTON_STYLE: React.CSSProperties = {
 const INTERACTIVE_SELECTOR = "button, a, input, i, svg, [role='button']";
 
 /**
- * 行クリックで直下に詳細を挿入する行。展開状態はローカルstate(storeに持たない: 設計 Decision #10)。
+ * 行クリックで直下に詳細を挿入する行。展開状態はローカルstate(storeに持たない)。
  * キーボード操作は行頭の展開ボタンが担う(行のonClickはマウス向けの補助)。
  */
 export function ExpandableRow({ cells, renderDetail, colSpan, onExpand, rowStyle }: ExpandableRowProps) {

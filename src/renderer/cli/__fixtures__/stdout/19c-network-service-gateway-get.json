@@ -1,0 +1,26 @@
+{
+  "data": {
+    "block-traffic": false,
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "default/example-user@example.com",
+        "CreatedOn": "2024-06-08T12:19:08.803Z"
+      }
+    },
+    "display-name": "example_prod-sg",
+    "freeform-tags": {},
+    "id": "ocid1.servicegateway.oc1.ap-tokyo-1.aaaaexample0001",
+    "lifecycle-state": "AVAILABLE",
+    "route-table-id": null,
+    "services": [
+      {
+        "service-id": "ocid1.service.oc1.ap-tokyo-1.aaaaexample0001",
+        "service-name": "All NRT Services In Oracle Services Network"
+      }
+    ],
+    "time-created": "2024-06-08T12:19:10.526000+00:00",
+    "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0001"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}
