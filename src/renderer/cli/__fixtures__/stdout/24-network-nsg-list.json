@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0002",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "default/user@example.com",
+          "CreatedOn": "2025-02-13T08:46:37.035Z"
+        }
+      },
+      "display-name": "example-dev-sg",
+      "freeform-tags": {},
+      "id": "ocid1.networksecuritygroup.oc1.ap-tokyo-1.aaaaexample0005",
+      "lifecycle-state": "AVAILABLE",
+      "time-created": "2025-02-13T08:46:37.147000+00:00",
+      "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0003"
+    }
+  ]
+}

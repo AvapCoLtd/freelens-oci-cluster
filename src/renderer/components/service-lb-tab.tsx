@@ -1,14 +1,16 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type { ClusterOciData } from "../fetch/fetch";
+import { sectionsReady } from "../match/section-ready";
 import type { LoadBalancerCandidate, ServiceLbMatchInput } from "../match/service-lb";
 import { matchServicesToLoadBalancers } from "../match/service-lb";
 import { sortRows } from "../match/sort-rows";
 import { ConsoleButton } from "./console-button";
-import { EmptyState, LOADING_LABEL } from "./empty-state";
+import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { SortableHeaderCell } from "./sortable-header-cell";
+import { LoadingBlock } from "./spinner";
 import { LifecycleBadge } from "./status-badge";
 import { TABLE_STYLE, TD_STYLE, TH_STYLE, UNMATCHED_ROW_STYLE } from "./table-styles";
 import { useColumnSort } from "./use-column-sort";
@@ -105,8 +107,9 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region }: Ser
   const serviceStore = Renderer.K8sApi.serviceStore;
   const [sort, toggleSort] = useColumnSort<ServiceLbColumn>("service");
 
-  if (!serviceStore.isLoaded) {
-    return <EmptyState message={LOADING_LABEL} />;
+  // 行のLB列が後から埋まるとテーブルがガタつくため、依存セクションが確定してから表を出す。
+  if (!serviceStore.isLoaded || !sectionsReady(data.nlbs, data.lbs, data.taggedResources)) {
+    return <LoadingBlock />;
   }
   const serviceInputs = buildServiceInputs(serviceStore.items);
   if (serviceInputs.length === 0) {

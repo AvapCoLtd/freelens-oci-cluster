@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0003",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "default/user@example.com",
+          "CreatedOn": "2026-07-03T12:46:57.193Z"
+        }
+      },
+      "display-name": "example-fss-snapshot-policy",
+      "freeform-tags": {},
+      "id": "ocid1.filesystemsnapshotpolicy.oc1.ap_tokyo_1.aaaaexample0002",
+      "lifecycle-state": "ACTIVE",
+      "locks": [],
+      "policy-prefix": "",
+      "system-tags": {},
+      "time-created": "2026-07-03T12:46:57.264000+00:00"
+    }
+  ]
+}

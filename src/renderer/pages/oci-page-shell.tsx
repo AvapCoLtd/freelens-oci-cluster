@@ -1,10 +1,10 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type * as React from "react";
-import { LOADING_LABEL } from "../components/empty-state";
 import { FatalErrorGuidance, NonOkeGuidance } from "../components/error-guidance";
 import { OciHeader } from "../components/oci-header";
 import { PollingToggle } from "../components/polling-toggle";
+import { Spinner } from "../components/spinner";
 import type { ClusterOciData } from "../fetch/fetch";
 import { buildHeaderInfo } from "../match/header-info";
 import { extractRegionFromOcid } from "../match/ocid-region";
@@ -34,11 +34,6 @@ const CENTER_STYLE: React.CSSProperties = {
   gap: 8,
 };
 
-const STAGE_LABEL: Record<"anchor" | "data", string> = {
-  anchor: "Identifying OCI cluster...",
-  data: "Fetching OCI resources...",
-};
-
 export interface OciPageShellProps {
   page: OciPage;
   renderLoaded: (data: ClusterOciData, region: string | undefined, clusterKey: string) => React.ReactNode;
@@ -61,10 +56,14 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
 
   const body = (() => {
     switch (state.status) {
+      // アンカー解決までは対象クラスタが決まらず本文を出せない。以降はセクション単位で出す。
       case "not_fetched":
-        return <div style={CENTER_STYLE}>{LOADING_LABEL}</div>;
       case "fetching":
-        return <div style={CENTER_STYLE}>{STAGE_LABEL[state.stage]}</div>;
+        return (
+          <div style={CENTER_STYLE}>
+            <Spinner />
+          </div>
+        );
       case "non_oke":
         return <NonOkeGuidance />;
       case "fatal_error":
@@ -85,7 +84,7 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
     <div style={PAGE_STYLE}>
       <OciHeader
         info={headerInfo}
-        fetching={state.status === "fetching"}
+        fetching={state.status === "fetching" || (state.status === "loaded" && !state.settled)}
         onRefresh={() => ociClusterStore.refresh(clusterKey, page)}
         extras={<PollingToggle clusterKey={clusterKey} page={page} />}
       />

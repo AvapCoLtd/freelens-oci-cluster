@@ -1,3 +1,4 @@
+import { isPending } from "../oci/result";
 import type { OciClusterViewState } from "../store/oci-cluster-store";
 import { extractRegionFromOcid } from "./ocid-region";
 
@@ -24,7 +25,8 @@ export function buildHeaderInfo(state: OciClusterViewState, catalogName: string 
       clusterOcid: state.anchor.clusterId,
       region,
       fetchedAt: state.fetchedAt,
-      clusterInfoFailed: true,
+      // 取得中はまだ失敗ではない(段階表示で本文が出ている間に失敗表示を先出ししない)。
+      clusterInfoFailed: !isPending(state.data.cluster),
     };
   }
   return {

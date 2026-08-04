@@ -46,6 +46,7 @@ export interface OciCluster {
   name?: string;
   "lifecycle-state"?: string;
   "kubernetes-version"?: string;
+  "vcn-id"?: string;
   "endpoint-config"?: {
     "subnet-id"?: string;
     "nsg-ids"?: string[];
@@ -73,8 +74,9 @@ export interface OciResourceSummary {
   "compartment-id"?: string;
 }
 
-/** `network subnet get` → 11 */
+/** `network subnet get` / `network subnet list` → 11, 21 */
 export interface OciSubnet {
+  id: string;
   "display-name"?: string;
   "vcn-id"?: string;
   "cidr-block"?: string;
@@ -100,16 +102,18 @@ export interface OciSecurityRule {
   "udp-options"?: OciPortOptions | null;
 }
 
-/** `network security-list get` → 12 */
+/** `network security-list get` / `network security-list list` → 12, 23 */
 export interface OciSecurityList {
+  id: string;
   "display-name"?: string;
   "vcn-id"?: string;
   "ingress-security-rules"?: OciSecurityRule[];
   "egress-security-rules"?: OciSecurityRule[];
 }
 
-/** `network route-table get` → 13 */
+/** `network route-table get` / `network route-table list` → 13, 22 */
 export interface OciRouteTable {
+  id: string;
   "display-name"?: string;
   "vcn-id"?: string;
   "route-rules"?: {
@@ -120,8 +124,9 @@ export interface OciRouteTable {
   }[];
 }
 
-/** `network nsg get` → 14a */
+/** `network nsg get` / `network nsg list` → 14a, 24 */
 export interface OciNsg {
+  id: string;
   "display-name"?: string;
   "vcn-id"?: string;
 }
@@ -237,14 +242,22 @@ export interface OciVolumeBackupPolicyAssignment {
   "policy-id"?: string;
 }
 
-/** `bv volume-backup-policy get` → 16b */
+/** `bv volume-backup-policy get` / `bv volume-backup-policy list` → 16b, 28 */
 export interface OciVolumeBackupPolicy {
+  id: string;
   "display-name"?: string;
 }
 
-/** `fs filesystem-snapshot-policy get` → 17 */
+/** `fs filesystem-snapshot-policy get` / `fs filesystem-snapshot-policy list` → 17, 27 */
 export interface OciFilesystemSnapshotPolicy {
+  id: string;
   "display-name"?: string;
+}
+
+/** `iam availability-domain list` → 26 */
+export interface OciAvailabilityDomain {
+  id: string;
+  name: string;
 }
 
 /** `certs-mgmt certificate get` → 18 */
@@ -255,32 +268,39 @@ export interface OciManagedCertificate {
   };
 }
 
-/** `network nat-gateway get` / `service-gateway get` → 19a, 19c */
+/** `network nat-gateway get|list` / `service-gateway get|list` → 19a, 19c, 25a, 25c */
 export interface OciBlockingGateway {
+  id: string;
   "display-name"?: string;
   "lifecycle-state"?: string;
   "block-traffic"?: boolean;
 }
 
-/** `network internet-gateway get` → 19b */
+/** `network internet-gateway get|list` → 19b, 25b */
 export interface OciInternetGateway {
+  id: string;
   "display-name"?: string;
   "lifecycle-state"?: string;
   "is-enabled"?: boolean;
 }
 
-/** `network local-peering-gateway get` → 19d */
+/** `network local-peering-gateway get|list` → 19d, 25d */
 export interface OciLocalPeeringGateway {
+  id: string;
   "display-name"?: string;
   "lifecycle-state"?: string;
   "peering-status"?: string;
 }
 
-/** `network drg get` → 19e */
+/** `network drg get|list` → 19e, 25e */
 export interface OciDrg {
+  id: string;
   "display-name"?: string;
   "lifecycle-state"?: string;
 }
+
+/** ゲートウェイ4種の応答から状態表示に使うフィールドだけを重ねた読み取り用の形。 */
+export type OciAnyGateway = OciBlockingGateway & Partial<OciInternetGateway> & Partial<OciLocalPeeringGateway>;
 
 /** ボリューム/FSSのバックアップ(スナップショット)ポリシー。policyName undefined=未割当。 */
 export interface OciBackupPolicyView {

@@ -66,6 +66,18 @@ const FIXTURE_DEFS: { file: string; def: OciCommandDef<never, unknown> }[] = [
   { file: "19e-network-drg-get.json", def: ociCommands.drgGet },
   { file: "20a-lb-backend-set-health-get.json", def: ociCommands.lbBackendSetHealthGet },
   { file: "20b-nlb-backend-set-health-get.json", def: ociCommands.nlbBackendSetHealthGet },
+  { file: "21-network-subnet-list.json", def: ociCommands.subnetList },
+  { file: "22-network-route-table-list.json", def: ociCommands.routeTableList },
+  { file: "23-network-security-list-list.json", def: ociCommands.securityListList },
+  { file: "24-network-nsg-list.json", def: ociCommands.nsgList },
+  { file: "25a-network-nat-gateway-list.json", def: ociCommands.natGatewayList },
+  { file: "25b-network-internet-gateway-list.json", def: ociCommands.internetGatewayList },
+  { file: "25c-network-service-gateway-list.json", def: ociCommands.serviceGatewayList },
+  { file: "25d-network-local-peering-gateway-list.json", def: ociCommands.localPeeringGatewayList },
+  { file: "25e-network-drg-list.json", def: ociCommands.drgList },
+  { file: "26-iam-availability-domain-list.json", def: ociCommands.availabilityDomainList },
+  { file: "27-fs-filesystem-snapshot-policy-list.json", def: ociCommands.fssSnapshotPolicyList },
+  { file: "28-bv-volume-backup-policy-list.json", def: ociCommands.volumeBackupPolicyList },
 ];
 
 /** フィクスチャの`data`(collectionは要素配列)をそのまま取り出したもの。 */
@@ -309,6 +321,69 @@ describe("parseOciStdout(フィクスチャ)", () => {
     expect(data.status).toBe("OK");
     expect(data["total-backend-count"]).toBe(3);
     expect(data["unknown-state-backend-names"]).toEqual([]);
+  });
+
+  it("#21 network subnet list(getと同じフルモデルをidつきで返す)", () => {
+    const { data } = parseFixture(ociCommands.subnetList, "21-network-subnet-list.json");
+    expect(data).toHaveLength(1);
+    expect(data[0]?.id).toBe("ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0007");
+    expect(data[0]?.["display-name"]).toBe("example-pub");
+    expect(data[0]?.["security-list-ids"]).toEqual(["ocid1.securitylist.oc1.ap-tokyo-1.aaaaexample0002"]);
+    expect(data[0]?.["route-table-id"]).toBe("ocid1.routetable.oc1.ap-tokyo-1.aaaaexample0002");
+  });
+
+  it("#22 network route-table list", () => {
+    const { data } = parseFixture(ociCommands.routeTableList, "22-network-route-table-list.json");
+    expect(data[0]?.id).toBe("ocid1.routetable.oc1.ap-tokyo-1.aaaaexample0002");
+    expect(data[0]?.["route-rules"]?.[0]?.["network-entity-id"]).toBe(
+      "ocid1.internetgateway.oc1.ap-tokyo-1.aaaaexample0002",
+    );
+  });
+
+  it("#23 network security-list list(ルール込み)", () => {
+    const { data } = parseFixture(ociCommands.securityListList, "23-network-security-list-list.json");
+    expect(data[0]?.id).toBe("ocid1.securitylist.oc1.ap-tokyo-1.aaaaexample0002");
+    expect(data[0]?.["ingress-security-rules"]).toHaveLength(3);
+    expect(data[0]?.["egress-security-rules"]).toHaveLength(1);
+  });
+
+  it("#24 network nsg list(ルールは含まれない)", () => {
+    const { data } = parseFixture(ociCommands.nsgList, "24-network-nsg-list.json");
+    expect(data[0]?.id).toBe("ocid1.networksecuritygroup.oc1.ap-tokyo-1.aaaaexample0005");
+    expect(data[0]?.["display-name"]).toBe("example-dev-sg");
+  });
+
+  it("#25a-e ゲートウェイlistは状態表示に使うフィールドを持つ", () => {
+    expect(parseFixture(ociCommands.natGatewayList, "25a-network-nat-gateway-list.json").data[0]).toMatchObject({
+      id: "ocid1.natgateway.oc1.ap-tokyo-1.aaaaexample0002",
+      "block-traffic": false,
+    });
+    expect(
+      parseFixture(ociCommands.internetGatewayList, "25b-network-internet-gateway-list.json").data[0],
+    ).toMatchObject({ "is-enabled": true });
+    expect(parseFixture(ociCommands.serviceGatewayList, "25c-network-service-gateway-list.json").data[0]).toMatchObject(
+      { "block-traffic": false },
+    );
+    expect(
+      parseFixture(ociCommands.localPeeringGatewayList, "25d-network-local-peering-gateway-list.json").data[0],
+    ).toMatchObject({ "peering-status": "PEERED" });
+    expect(parseFixture(ociCommands.drgList, "25e-network-drg-list.json").data).toHaveLength(2);
+  });
+
+  it("#26 iam availability-domain list", () => {
+    const { data } = parseFixture(ociCommands.availabilityDomainList, "26-iam-availability-domain-list.json");
+    expect(data.map((domain) => domain.name)).toEqual(["Abcd:AP-TOKYO-1-AD-1"]);
+  });
+
+  it("#27 fs filesystem-snapshot-policy list(Summaryのためschedulesは無い)", () => {
+    const { data } = parseFixture(ociCommands.fssSnapshotPolicyList, "27-fs-filesystem-snapshot-policy-list.json");
+    expect(data[0]?.["display-name"]).toBe("example-fss-snapshot-policy");
+    expect(data[0]).not.toHaveProperty("schedules");
+  });
+
+  it("#28 bv volume-backup-policy list(compartment無指定でOracle定義の3件)", () => {
+    const { data } = parseFixture(ociCommands.volumeBackupPolicyList, "28-bv-volume-backup-policy-list.json");
+    expect(data.map((policy) => policy["display-name"])).toEqual(["silver", "bronze", "gold"]);
   });
 
   it("#16a 割当なしはstdoutが空でも空結果になる", () => {

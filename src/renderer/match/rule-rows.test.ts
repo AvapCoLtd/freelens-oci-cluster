@@ -5,6 +5,7 @@ import { nsgRuleRows, protocolLabel, routeRows, securityListRuleRows } from "./r
 describe("securityListRuleRows", () => {
   it("ingress/egressをdirection付きで平坦化し、ポート範囲を整形する", () => {
     const sl: OciSecurityList = {
+      id: "ocid1.securitylist.oc1..sl1",
       "ingress-security-rules": [
         {
           source: "0.0.0.0/0",
@@ -48,7 +49,7 @@ describe("securityListRuleRows", () => {
   });
 
   it("ルール配列が無くてもthrowしない", () => {
-    expect(securityListRuleRows({})).toEqual([]);
+    expect(securityListRuleRows({ id: "ocid1.securitylist.oc1..sl1" })).toEqual([]);
   });
 });
 
@@ -80,6 +81,7 @@ describe("nsgRuleRows", () => {
 describe("routeRows", () => {
   it("宛先エンティティ種別をOCIDから表示名にする", () => {
     const rt: OciRouteTable = {
+      id: "ocid1.routetable.oc1..rt1",
       "route-rules": [
         { destination: "0.0.0.0/0", "network-entity-id": "ocid1.natgateway.oc1..x" },
         { destination: "192.168.100.0/24", "network-entity-id": "ocid1.drg.oc1..y", description: "to onprem" },

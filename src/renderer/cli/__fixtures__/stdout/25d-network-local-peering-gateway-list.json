@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0003",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "default/user@example.com",
+          "CreatedOn": "2024-10-22T09:56:16.961Z"
+        }
+      },
+      "display-name": "example-peer",
+      "freeform-tags": {},
+      "id": "ocid1.localpeeringgateway.oc1.ap-tokyo-1.aaaaexample0003",
+      "is-cross-tenancy-peering": false,
+      "lifecycle-state": "AVAILABLE",
+      "peer-advertised-cidr": "10.0.0.0/16",
+      "peer-advertised-cidr-details": [
+        "10.0.0.0/16"
+      ],
+      "peer-id": "ocid1.localpeeringgateway.oc1.ap-tokyo-1.aaaaexample0004",
+      "peering-status": "PEERED",
+      "peering-status-details": "Connected to a peer.",
+      "route-table-id": null,
+      "security-attributes": null,
+      "time-created": "2024-10-22T09:56:17.014000+00:00",
+      "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0004"
+    }
+  ]
+}

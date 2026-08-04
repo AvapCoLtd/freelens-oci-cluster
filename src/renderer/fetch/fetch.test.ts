@@ -4,9 +4,11 @@ import { runOciCommand } from "../cli/run";
 import type { OciResult } from "../oci/result";
 import { resolveAnchor } from "./anchor";
 import {
+  fetchAvailabilityDomains,
   fetchBackendSetHealth,
   fetchCluster,
   fetchFileSystem,
+  fetchFssSnapshotPolicies,
   fetchFssSnapshotPolicyName,
   fetchGatewayStatus,
   fetchInstances,
@@ -19,6 +21,12 @@ import {
   fetchSecurityList,
   fetchSubnet,
   fetchTaggedResources,
+  fetchVcnGateways,
+  fetchVcnNsgs,
+  fetchVcnRouteTables,
+  fetchVcnSecurityLists,
+  fetchVcnSubnets,
+  fetchVolumeBackupPolicies,
   fetchVolumeBackupPolicyName,
   fetchVolumes,
   fetchWafPolicy,
@@ -32,6 +40,8 @@ const NODE_POOL_ID = "ocid1.nodepool.oc1.ap-tokyo-1.aaaaexample0001";
 const CLUSTER_ID = "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001";
 const COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaexample0001";
 const OTHER_COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaexample0002";
+const VCN_ID = "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0001";
+const AVAILABILITY_DOMAIN = "Abcd:AP-TOKYO-1-AD-1";
 const SUBNET_ID = "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0001";
 const SECURITY_LIST_ID = "ocid1.securitylist.oc1.ap-tokyo-1.aaaaexample0001";
 const ROUTE_TABLE_ID = "ocid1.routetable.oc1.ap-tokyo-1.aaaaexample0001";
@@ -225,6 +235,64 @@ const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }
     expected: [{ command: "drgGet", params: { drgId: DRG_ID } }],
   },
   {
+    name: "fetchVcnSubnets",
+    call: () => fetchVcnSubnets([COMPARTMENT_ID, OTHER_COMPARTMENT_ID], VCN_ID, OCI_COMMAND),
+    expected: [
+      { command: "subnetList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } },
+      { command: "subnetList", params: { compartmentId: OTHER_COMPARTMENT_ID, vcnId: VCN_ID } },
+    ],
+  },
+  {
+    name: "fetchVcnRouteTables",
+    call: () => fetchVcnRouteTables([COMPARTMENT_ID], VCN_ID, OCI_COMMAND),
+    expected: [{ command: "routeTableList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } }],
+  },
+  {
+    name: "fetchVcnSecurityLists",
+    call: () => fetchVcnSecurityLists([COMPARTMENT_ID], VCN_ID, OCI_COMMAND),
+    expected: [{ command: "securityListList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } }],
+  },
+  {
+    name: "fetchVcnNsgs",
+    call: () => fetchVcnNsgs([COMPARTMENT_ID], VCN_ID, OCI_COMMAND),
+    expected: [{ command: "nsgList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } }],
+  },
+  {
+    name: "fetchVcnGateways",
+    call: () => fetchVcnGateways([COMPARTMENT_ID], VCN_ID, OCI_COMMAND),
+    expected: [
+      { command: "natGatewayList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } },
+      { command: "internetGatewayList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } },
+      { command: "serviceGatewayList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } },
+      { command: "localPeeringGatewayList", params: { compartmentId: COMPARTMENT_ID, vcnId: VCN_ID } },
+      { command: "drgList", params: { compartmentId: COMPARTMENT_ID } },
+    ],
+  },
+  {
+    name: "fetchAvailabilityDomains",
+    call: () => fetchAvailabilityDomains(COMPARTMENT_ID, OCI_COMMAND),
+    expected: [{ command: "availabilityDomainList", params: { compartmentId: COMPARTMENT_ID } }],
+  },
+  {
+    name: "fetchFssSnapshotPolicies",
+    call: () => fetchFssSnapshotPolicies([COMPARTMENT_ID], [AVAILABILITY_DOMAIN], OCI_COMMAND),
+    expected: [
+      {
+        command: "fssSnapshotPolicyList",
+        params: { compartmentId: COMPARTMENT_ID, availabilityDomain: AVAILABILITY_DOMAIN },
+      },
+    ],
+  },
+  {
+    name: "fetchVolumeBackupPolicies",
+    call: () => fetchVolumeBackupPolicies([COMPARTMENT_ID], OCI_COMMAND),
+    expected: [
+      { command: "volumeBackupPolicyList", params: { compartmentId: COMPARTMENT_ID } },
+      // compartment無指定の1本がOracle定義ポリシーを拾う。
+      { command: "volumeBackupPolicyList", params: {} },
+    ],
+  },
+  {
     name: "fetchBackendSetHealth(lb)",
     call: () => fetchBackendSetHealth("lb", LB_ID, "TCP-443", OCI_COMMAND),
     expected: [{ command: "lbBackendSetHealthGet", params: { loadBalancerId: LB_ID, backendSetName: "TCP-443" } }],
@@ -249,7 +317,7 @@ describe("取得経路のコマンド割り当て", () => {
     expect(settingsSeen).toEqual([OCI_COMMAND]);
   });
 
-  it("定義表の全28コマンドが取得経路から呼ばれる", async () => {
+  it("定義表の全40コマンドが取得経路から呼ばれる", async () => {
     const used = new Set<string>();
     for (const mapping of MAPPINGS) {
       calls = [];
@@ -258,7 +326,7 @@ describe("取得経路のコマンド割り当て", () => {
       for (const call of calls) used.add(call.command);
     }
     expect(used).toEqual(new Set(Object.keys(ociCommands)));
-    expect(used.size).toBe(28);
+    expect(used.size).toBe(40);
   });
 });
 

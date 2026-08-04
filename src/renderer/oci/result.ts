@@ -3,6 +3,7 @@
 // "command_incompatible"は利用者が設定した互換コマンドが引数を転送しない/サブコマンドを知らない場合。
 // "internal"はoci実行自体でなく、出力の後処理(結合等)で例外が出た場合に呼び出し元が付与する。
 // "not_requested"はそのページが要求していないセクションのplaceholderに呼び出し元が付与する。
+// "loading"は取得中セクションのplaceholder。失敗ではないため表示側でエラー枠に混ぜてはならない。
 export type OciErrorKind =
   | "command_launch_failed"
   | "not_authenticated"
@@ -10,7 +11,8 @@ export type OciErrorKind =
   | "other"
   | "command_incompatible"
   | "internal"
-  | "not_requested";
+  | "not_requested"
+  | "loading";
 
 export interface OciRawErrorInfo {
   message: string;
@@ -22,3 +24,8 @@ export interface OciRawErrorInfo {
 }
 
 export type OciResult<T> = { ok: true; data: T } | { ok: false; kind: OciErrorKind; raw: OciRawErrorInfo };
+
+/** そのセクションがまだ取得中か(段階表示で「空」と「未取得」を区別する)。 */
+export function isPending<T>(result: OciResult<T> | undefined): boolean {
+  return !!result && !result.ok && result.kind === "loading";
+}

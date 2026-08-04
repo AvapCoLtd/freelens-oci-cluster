@@ -1,7 +1,5 @@
 import type * as React from "react";
 
-export const LOADING_LABEL = "Loading...";
-
 const EMPTY_STYLE: React.CSSProperties = {
   padding: "16px 0",
   color: "var(--textColorSecondary, #9aa0a6)",

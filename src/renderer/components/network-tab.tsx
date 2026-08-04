@@ -2,7 +2,7 @@ import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type * as React from "react";
 import type { ClusterOciData } from "../fetch/fetch";
-import { type DnsMatchKind, matchDnsToLbs } from "../match/dns-check";
+import { collectHostnames, type DnsMatchKind, matchDnsToLbs } from "../match/dns-check";
 import { gatewayHealth, isSupportedGatewayId } from "../match/gateway-status";
 import { daysUntil } from "../match/lb-certificates";
 import {
@@ -14,17 +14,19 @@ import {
   type SubnetRow,
 } from "../match/network-path";
 import { nsgRuleRows, routeRows, securityListRuleRows } from "../match/rule-rows";
+import { entriesReady, sectionsReady } from "../match/section-ready";
 import { ingressIpsOfServices } from "../match/service-lb";
 import { wafDefaultAction, wafPolicyRuleRows } from "../match/waf-policy";
 import type { OciResult } from "../oci/result";
 import { backendHealthKey, ociClusterStore } from "../store/oci-cluster-store";
 import { ConsoleButton } from "./console-button";
-import { EmptyState, LOADING_LABEL } from "./empty-state";
+import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { ExpandableRow } from "./expandable-row";
 import { Icon } from "./freelens-ui";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { RouteRuleTable, RuleTable } from "./rule-table";
+import { LoadingBlock, Spinner } from "./spinner";
 import { LifecycleBadge, StatusBadge } from "./status-badge";
 import { TABLE_STYLE, TD_STYLE, TH_STYLE } from "./table-styles";
 
@@ -60,6 +62,20 @@ interface SectionContext {
   clusterKey: string;
 }
 
+/** LB/NLBの行集合が確定したか(クラスタ関連判定にタグ検索も要る)。 */
+function lbRowsReady(data: ClusterOciData): boolean {
+  return sectionsReady(data.nlbs, data.lbs, data.taggedResources);
+}
+
+/** subnet一覧の行集合と各行のセル(名前/CIDR)が確定したか。 */
+function subnetRowsReady(data: ClusterOciData, rows: SubnetRow[]): boolean {
+  if (!lbRowsReady(data) || !sectionsReady(data.cluster, data.nodePools)) return false;
+  return entriesReady(
+    data.subnets,
+    rows.map((row) => row.subnetId),
+  );
+}
+
 /** Record未登載(取得中)/失敗/成功を1блокに畳む共通表示。 */
 function ResultBlock<T>({
   result,
@@ -68,7 +84,7 @@ function ResultBlock<T>({
   result: OciResult<T> | undefined;
   render: (data: T) => React.ReactNode;
 }) {
-  if (!result) return <div style={PENDING_STYLE}>{LOADING_LABEL}</div>;
+  if (!result) return <Spinner size={14} />;
   if (!result.ok) return <SectionError kind={result.kind} raw={result.raw} />;
   return <>{render(result.data)}</>;
 }
@@ -123,7 +139,7 @@ function SlBlock({ ctx, slId }: { ctx: SectionContext; slId: string }) {
 function GatewayStatusCell({ ctx, entityId }: { ctx: SectionContext; entityId: string | undefined }) {
   if (!isSupportedGatewayId(entityId)) return <span>-</span>;
   const result = ctx.data.gateways[entityId];
-  if (!result) return <span style={PENDING_STYLE}>{LOADING_LABEL}</span>;
+  if (!result) return <Spinner size={12} />;
   if (!result.ok) return <StatusBadge label={FETCH_FAILED_LABEL} tone="neutral" />;
   const health = gatewayHealth(result.data);
   return (
@@ -247,8 +263,10 @@ function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
             </span>
             {result?.ok ? (
               <CertificateBadge validTo={result.data.validTo} />
+            ) : result ? (
+              <span style={PENDING_STYLE}>{FETCH_FAILED_LABEL}</span>
             ) : (
-              <span style={PENDING_STYLE}>{result ? FETCH_FAILED_LABEL : LOADING_LABEL}</span>
+              <Spinner size={12} />
             )}
           </div>
         );
@@ -286,7 +304,9 @@ function LbSection({ ctx, lbRows }: { ctx: SectionContext; lbRows: LbRow[] }) {
       {!ctx.data.lbs.ok && ctx.data.lbs.kind !== "not_requested" && (
         <SectionError kind={ctx.data.lbs.kind} raw={ctx.data.lbs.raw} />
       )}
-      {lbRows.length === 0 ? (
+      {!lbRowsReady(ctx.data) ? (
+        <LoadingBlock />
+      ) : lbRows.length === 0 ? (
         <EmptyState message="No LB / NLB" />
       ) : (
         <table style={TABLE_STYLE}>
@@ -373,7 +393,9 @@ function SubnetSection({
     <section>
       <div style={SECTION_TITLE_STYLE}>{title}</div>
       {note && <div style={SECTION_NOTE_STYLE}>{note}</div>}
-      {rows.length === 0 ? (
+      {!subnetRowsReady(ctx.data, rows) ? (
+        <LoadingBlock />
+      ) : rows.length === 0 ? (
         <EmptyState message="No target subnets" />
       ) : (
         <table style={TABLE_STYLE}>
@@ -487,7 +509,13 @@ const DNS_MATCH_BADGE: Record<DnsMatchKind, { label: string; tone: "success" | "
 };
 
 function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
-  const hosts = Object.keys(ctx.data.dnsChecks).sort();
+  // 行の集合はK8s側から直に導く(dnsChecksの登録待ちで「該当なし」を先に出さないため)。
+  const hosts = [
+    ...new Set([
+      ...collectHostnames(Renderer.K8sApi.ingressStore.items, Renderer.K8sApi.serviceStore.items),
+      ...Object.keys(ctx.data.dnsChecks),
+    ]),
+  ].sort();
   return (
     <section>
       <div style={SECTION_TITLE_STYLE}>DNS</div>
@@ -515,10 +543,10 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
                   <tr key={host}>
                     <td style={TD_STYLE}>{host}</td>
                     <td style={TD_STYLE} colSpan={2}>
-                      {result ? `${RESOLUTION_FAILED_LABEL}: ${result.raw.message}` : LOADING_LABEL}
+                      {result ? `${RESOLUTION_FAILED_LABEL}: ${result.raw.message}` : <Spinner size={12} />}
                     </td>
                     <td style={TD_STYLE}>
-                      <StatusBadge label={RESOLUTION_FAILED_LABEL} tone="neutral" />
+                      {result ? <StatusBadge label={RESOLUTION_FAILED_LABEL} tone="neutral" /> : "-"}
                     </td>
                   </tr>
                 );
@@ -554,7 +582,9 @@ function WafSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
       {!ctx.data.wafs.ok && ctx.data.wafs.kind !== "not_requested" && (
         <SectionError kind={ctx.data.wafs.kind} raw={ctx.data.wafs.raw} />
       )}
-      {view.wafRows.length === 0 ? (
+      {!lbRowsReady(ctx.data) || !sectionsReady(ctx.data.wafs) ? (
+        <LoadingBlock />
+      ) : view.wafRows.length === 0 ? (
         <EmptyState message="No WAF attached to this cluster's classic LBs" />
       ) : (
         <table style={TABLE_STYLE}>

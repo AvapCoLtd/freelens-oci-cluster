@@ -6,12 +6,14 @@ describe("gatewayIdsOfRouteTables", () => {
   it("対応種別のゲートウェイOCIDを重複なしで集める", () => {
     const rts: OciRouteTable[] = [
       {
+        id: "ocid1.routetable.oc1..rt1",
         "route-rules": [
           { destination: "0.0.0.0/0", "network-entity-id": "ocid1.natgateway.oc1..n1" },
           { destination: "10.0.0.0/8", "network-entity-id": "ocid1.drg.oc1..d1" },
         ],
       },
       {
+        id: "ocid1.routetable.oc1..rt2",
         "route-rules": [
           { destination: "0.0.0.0/0", "network-entity-id": "ocid1.natgateway.oc1..n1" },
           { destination: "10.1.0.0/16", "network-entity-id": "ocid1.privateip.oc1..p1" },

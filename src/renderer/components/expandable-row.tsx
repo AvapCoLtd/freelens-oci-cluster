@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Icon } from "./freelens-ui";
+import type { InjectedStyle } from "./injected-style";
 import { TD_STYLE } from "./table-styles";
 
 export interface ExpandableRowProps {
@@ -21,19 +22,10 @@ const DETAIL_CELL_STYLE: React.CSSProperties = {
 // inline styleは:hoverを表現できないためスタイルを注入する。色はFreeLens標準テーブルの選択行と同じCSS変数に寄せる。
 const HOVER_CLASS = "oci-expandable-row";
 
-/** 拡張機能の有効化時に呼ぶ。既に注入済みなら何もしない(冪等)。 */
-export function ensureExpandableRowStyle(): void {
-  if (typeof document === "undefined" || document.getElementById(HOVER_CLASS)) return;
-  const style = document.createElement("style");
-  style.id = HOVER_CLASS;
-  style.textContent = `.${HOVER_CLASS}:hover { background: var(--tableSelectedRowBackground, rgba(255, 255, 255, 0.06)); }`;
-  document.head.appendChild(style);
-}
-
-/** 拡張機能の無効化時に呼ぶ。未注入なら何もしない(冪等)。 */
-export function removeExpandableRowStyle(): void {
-  document.getElementById(HOVER_CLASS)?.remove();
-}
+export const EXPANDABLE_ROW_STYLE: InjectedStyle = {
+  id: HOVER_CLASS,
+  css: `.${HOVER_CLASS}:hover { background: var(--tableSelectedRowBackground, rgba(255, 255, 255, 0.06)); }`,
+};
 
 const TOGGLE_BUTTON_STYLE: React.CSSProperties = {
   background: "none",

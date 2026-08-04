@@ -1,0 +1,9 @@
+{
+  "data": [
+    {
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+      "id": "ocid1.availabilitydomain.oc1..aaaaexample0001",
+      "name": "Abcd:AP-TOKYO-1-AD-1"
+    }
+  ]
+}

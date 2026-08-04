@@ -5,6 +5,8 @@ const INSTANCE_ID = "ocid1.instance.oc1.ap-tokyo-1.aaaaexample0001";
 const NODE_POOL_ID = "ocid1.nodepool.oc1.ap-tokyo-1.aaaaexample0001";
 const CLUSTER_ID = "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001";
 const COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaexample0001";
+const VCN_ID = "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0001";
+const AVAILABILITY_DOMAIN = "Abcd:AP-TOKYO-1-AD-1";
 const SUBNET_ID = "ocid1.subnet.oc1.ap-tokyo-1.aaaaexample0001";
 const SECURITY_LIST_ID = "ocid1.securitylist.oc1.ap-tokyo-1.aaaaexample0001";
 const ROUTE_TABLE_ID = "ocid1.routetable.oc1.ap-tokyo-1.aaaaexample0001";
@@ -24,7 +26,7 @@ const LB_ID = "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const NLB_ID = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const QUERY_TEXT = `query all resources where (definedTags.namespace = 'Oracle-Tags' && definedTags.key = 'CreatedBy' && definedTags.value = '${CLUSTER_ID}')`;
 
-/** フィクスチャREADMEの対応表(全28コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
+/** フィクスチャREADMEの対応表(全40コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
 const CASES: { id: string; key: OciCommandName; actual: string[]; expected: string[] }[] = [
   {
     id: "1a",
@@ -208,6 +210,99 @@ const CASES: { id: string; key: OciCommandName; actual: string[]; expected: stri
       "TCP-443",
     ],
   },
+  {
+    id: "21",
+    key: "subnetList",
+    actual: ociCommands.subnetList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: ["network", "subnet", "list", "--compartment-id", COMPARTMENT_ID, "--vcn-id", VCN_ID, "--all"],
+  },
+  {
+    id: "22",
+    key: "routeTableList",
+    actual: ociCommands.routeTableList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: ["network", "route-table", "list", "--compartment-id", COMPARTMENT_ID, "--vcn-id", VCN_ID, "--all"],
+  },
+  {
+    id: "23",
+    key: "securityListList",
+    actual: ociCommands.securityListList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: ["network", "security-list", "list", "--compartment-id", COMPARTMENT_ID, "--vcn-id", VCN_ID, "--all"],
+  },
+  {
+    id: "24",
+    key: "nsgList",
+    actual: ociCommands.nsgList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: ["network", "nsg", "list", "--compartment-id", COMPARTMENT_ID, "--vcn-id", VCN_ID, "--all"],
+  },
+  {
+    id: "25a",
+    key: "natGatewayList",
+    actual: ociCommands.natGatewayList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: ["network", "nat-gateway", "list", "--compartment-id", COMPARTMENT_ID, "--vcn-id", VCN_ID, "--all"],
+  },
+  {
+    id: "25b",
+    key: "internetGatewayList",
+    actual: ociCommands.internetGatewayList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: ["network", "internet-gateway", "list", "--compartment-id", COMPARTMENT_ID, "--vcn-id", VCN_ID, "--all"],
+  },
+  {
+    id: "25c",
+    key: "serviceGatewayList",
+    actual: ociCommands.serviceGatewayList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: ["network", "service-gateway", "list", "--compartment-id", COMPARTMENT_ID, "--vcn-id", VCN_ID, "--all"],
+  },
+  {
+    id: "25d",
+    key: "localPeeringGatewayList",
+    actual: ociCommands.localPeeringGatewayList.args({ compartmentId: COMPARTMENT_ID, vcnId: VCN_ID }),
+    expected: [
+      "network",
+      "local-peering-gateway",
+      "list",
+      "--compartment-id",
+      COMPARTMENT_ID,
+      "--vcn-id",
+      VCN_ID,
+      "--all",
+    ],
+  },
+  {
+    id: "25e",
+    key: "drgList",
+    actual: ociCommands.drgList.args({ compartmentId: COMPARTMENT_ID }),
+    expected: ["network", "drg", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
+  },
+  {
+    id: "26",
+    key: "availabilityDomainList",
+    actual: ociCommands.availabilityDomainList.args({ compartmentId: COMPARTMENT_ID }),
+    expected: ["iam", "availability-domain", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
+  },
+  {
+    id: "27",
+    key: "fssSnapshotPolicyList",
+    actual: ociCommands.fssSnapshotPolicyList.args({
+      compartmentId: COMPARTMENT_ID,
+      availabilityDomain: AVAILABILITY_DOMAIN,
+    }),
+    expected: [
+      "fs",
+      "filesystem-snapshot-policy",
+      "list",
+      "--compartment-id",
+      COMPARTMENT_ID,
+      "--availability-domain",
+      AVAILABILITY_DOMAIN,
+      "--all",
+    ],
+  },
+  {
+    id: "28",
+    key: "volumeBackupPolicyList",
+    actual: ociCommands.volumeBackupPolicyList.args({ compartmentId: COMPARTMENT_ID }),
+    expected: ["bv", "volume-backup-policy", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
+  },
 ];
 
 describe("ociCommands", () => {
@@ -215,10 +310,10 @@ describe("ociCommands", () => {
     expect(actual).toEqual(expected);
   });
 
-  it("定義表はSDK呼び出し全28件を網羅し、余分な定義を持たない", () => {
-    expect(CASES).toHaveLength(28);
+  it("定義表はSDK呼び出し全40件を網羅し、余分な定義を持たない", () => {
+    expect(CASES).toHaveLength(40);
     expect(new Set(CASES.map((testCase) => testCase.key))).toEqual(new Set(Object.keys(ociCommands)));
-    expect(Object.keys(ociCommands)).toHaveLength(28);
+    expect(Object.keys(ociCommands)).toHaveLength(40);
   });
 
   it("手動ページングはsearchのみ(他はCLI側の--allで全件取得)", () => {
@@ -244,6 +339,18 @@ describe("ociCommands", () => {
         "wafList",
         "nsgRulesList",
         "volumeBackupPolicyAssignmentGet",
+        "subnetList",
+        "routeTableList",
+        "securityListList",
+        "nsgList",
+        "natGatewayList",
+        "internetGatewayList",
+        "serviceGatewayList",
+        "localPeeringGatewayList",
+        "drgList",
+        "availabilityDomainList",
+        "fssSnapshotPolicyList",
+        "volumeBackupPolicyList",
       ]),
     );
   });

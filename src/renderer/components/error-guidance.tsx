@@ -50,6 +50,11 @@ export function describeOciError(kind: OciErrorKind): OciErrorGuidance {
         title: "Not fetched on this page",
         body: "This section is not fetched on the current page.",
       };
+    case "loading":
+      return {
+        title: "Loading",
+        body: "This section is still being fetched.",
+      };
     default:
       return {
         title: "OCI command failed",
@@ -89,8 +94,12 @@ const NOTICE_BOX_STYLE: React.CSSProperties = {
   color: "var(--textColorPrimary, #fff)",
 };
 
-/** セクション単位(タブ内の一部データ)のOCI呼び出し失敗表示。他セクションの表示は妨げない。 */
+/**
+ * セクション単位(タブ内の一部データ)のOCI呼び出し失敗表示。他セクションの表示は妨げない。
+ * 取得中(kind="loading")は失敗ではなく、露出単位ごとのLoading表示が別にあるため何も出さない。
+ */
 export function SectionError({ kind, raw }: { kind: OciErrorKind; raw: OciRawErrorInfo }) {
+  if (kind === "loading") return null;
   const guidance = describeOciError(kind);
   return (
     <div style={NOTICE_BOX_STYLE}>

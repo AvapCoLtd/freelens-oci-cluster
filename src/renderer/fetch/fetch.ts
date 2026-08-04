@@ -4,22 +4,31 @@ import { gatewayKindOf, type OciGatewayStatusView } from "../match/gateway-statu
 import { routeEntityKind } from "../match/network-path";
 import type { OciResult } from "../oci/result";
 import type {
+  OciAnyGateway,
+  OciAvailabilityDomain,
   OciBackendSetHealth,
   OciBackendSetHealthView,
   OciBackupPolicyView,
+  OciBlockingGateway,
   OciCluster,
+  OciDrg,
   OciFileSystem,
+  OciFilesystemSnapshotPolicy,
   OciInstance,
+  OciInternetGateway,
   OciLoadBalancer,
+  OciLocalPeeringGateway,
   OciManagedCertView,
   OciNetworkLoadBalancerSummary,
   OciNodePoolSummary,
+  OciNsg,
   OciNsgWithRules,
   OciResourceSummary,
   OciRouteTable,
   OciSecurityList,
   OciSubnet,
   OciVolume,
+  OciVolumeBackupPolicy,
   OciWafPolicy,
   OciWafSummary,
 } from "../oci/types";
@@ -70,18 +79,23 @@ async function toSectionResult<T>(promise: Promise<OciResult<T>>): Promise<OciRe
   }
 }
 
-/** compartmentごとにfetchOneを実行し、結果をidで重複排除して結合する。1つでも失敗すればセクション全体を失敗として返す。 */
-async function listAcrossCompartments<T extends { id: string }>(
-  fetchOne: (compartmentId: string) => Promise<OciResult<T[]>>,
-  compartmentIds: string[],
-): Promise<OciResult<T[]>> {
-  const results = await Promise.all(compartmentIds.map(fetchOne));
+/** 複数スコープのlist結果をidで重複排除して結合する。1つでも失敗すればセクション全体を失敗として返す。 */
+async function mergeLists<T extends { id: string }>(jobs: Promise<OciResult<T[]>>[]): Promise<OciResult<T[]>> {
+  const results = await Promise.all(jobs);
   const merged = new Map<string, T>();
   for (const result of results) {
     if (!result.ok) return result;
     for (const item of result.data) merged.set(item.id, item);
   }
   return { ok: true, data: [...merged.values()] };
+}
+
+/** compartmentごとにfetchOneを実行し、結果をidで重複排除して結合する。 */
+function listAcrossCompartments<T extends { id: string }>(
+  fetchOne: (compartmentId: string) => Promise<OciResult<T[]>>,
+  compartmentIds: readonly string[],
+): Promise<OciResult<T[]>> {
+  return mergeLists(compartmentIds.map(fetchOne));
 }
 
 // クラスタ固有タグ(CreatedBy=clusterId)によるテナンシ横断検索。OKE/CCM作成のNLB・Volumeが対象(実テナンシ検証済み)。
@@ -197,12 +211,18 @@ export function fetchRouteTable(rtId: string, ociCliCommand: string): Promise<Oc
   return toSectionResult(run(ociCommands.routeTableGet, { rtId }, ociCliCommand));
 }
 
-// #14 NSG本体+ルール(networkページ)。名前表示のためgetとrules listの2 call。
-export function fetchNsgWithRules(nsgId: string, ociCliCommand: string): Promise<OciResult<OciNsgWithRules>> {
+// #14 NSG本体+ルール(networkページ)。knownNsgを渡すと本体getを省き`nsg rules list`だけを叩く。
+export function fetchNsgWithRules(
+  nsgId: string,
+  ociCliCommand: string,
+  knownNsg?: OciNsg,
+): Promise<OciResult<OciNsgWithRules>> {
   return toSectionResult(
     (async (): Promise<OciResult<OciNsgWithRules>> => {
       const [nsg, rules] = await Promise.all([
-        run(ociCommands.nsgGet, { nsgId }, ociCliCommand),
+        knownNsg
+          ? Promise.resolve<OciResult<OciNsg>>({ ok: true, data: knownNsg })
+          : run(ociCommands.nsgGet, { nsgId }, ociCliCommand),
         run(ociCommands.nsgRulesList, { nsgId }, ociCliCommand),
       ]);
       if (!nsg.ok) return nsg;
@@ -212,15 +232,153 @@ export function fetchNsgWithRules(nsgId: string, ociCliCommand: string): Promise
   );
 }
 
+// #21-#25 VCN配下のnetworkリソースの型別一括取得(networkページ)。個別getの数珠つなぎを置き換える。
+export function fetchVcnSubnets(
+  compartmentIds: readonly string[],
+  vcnId: string,
+  ociCliCommand: string,
+): Promise<OciResult<OciSubnet[]>> {
+  return toSectionResult(
+    listAcrossCompartments(
+      (compartmentId) => run(ociCommands.subnetList, { compartmentId, vcnId }, ociCliCommand),
+      compartmentIds,
+    ),
+  );
+}
+
+export function fetchVcnRouteTables(
+  compartmentIds: readonly string[],
+  vcnId: string,
+  ociCliCommand: string,
+): Promise<OciResult<OciRouteTable[]>> {
+  return toSectionResult(
+    listAcrossCompartments(
+      (compartmentId) => run(ociCommands.routeTableList, { compartmentId, vcnId }, ociCliCommand),
+      compartmentIds,
+    ),
+  );
+}
+
+export function fetchVcnSecurityLists(
+  compartmentIds: readonly string[],
+  vcnId: string,
+  ociCliCommand: string,
+): Promise<OciResult<OciSecurityList[]>> {
+  return toSectionResult(
+    listAcrossCompartments(
+      (compartmentId) => run(ociCommands.securityListList, { compartmentId, vcnId }, ociCliCommand),
+      compartmentIds,
+    ),
+  );
+}
+
+export function fetchVcnNsgs(
+  compartmentIds: readonly string[],
+  vcnId: string,
+  ociCliCommand: string,
+): Promise<OciResult<OciNsg[]>> {
+  return toSectionResult(
+    listAcrossCompartments(
+      (compartmentId) => run(ociCommands.nsgList, { compartmentId, vcnId }, ociCliCommand),
+      compartmentIds,
+    ),
+  );
+}
+
+/** VCN配下のゲートウェイ4種 + compartment配下のDRG。種別ごとにOCID→状態表示用Viewへ詰め替える。 */
+export function fetchVcnGateways(
+  compartmentIds: readonly string[],
+  vcnId: string,
+  ociCliCommand: string,
+): Promise<OciResult<Map<string, OciGatewayStatusView>>> {
+  return toSectionResult(
+    (async (): Promise<OciResult<Map<string, OciGatewayStatusView>>> => {
+      const [nat, internet, service, localPeering, drg] = await Promise.all([
+        listAcrossCompartments<OciBlockingGateway>(
+          (compartmentId) => run(ociCommands.natGatewayList, { compartmentId, vcnId }, ociCliCommand),
+          compartmentIds,
+        ),
+        listAcrossCompartments<OciInternetGateway>(
+          (compartmentId) => run(ociCommands.internetGatewayList, { compartmentId, vcnId }, ociCliCommand),
+          compartmentIds,
+        ),
+        listAcrossCompartments<OciBlockingGateway>(
+          (compartmentId) => run(ociCommands.serviceGatewayList, { compartmentId, vcnId }, ociCliCommand),
+          compartmentIds,
+        ),
+        listAcrossCompartments<OciLocalPeeringGateway>(
+          (compartmentId) => run(ociCommands.localPeeringGatewayList, { compartmentId, vcnId }, ociCliCommand),
+          compartmentIds,
+        ),
+        listAcrossCompartments<OciDrg>(
+          (compartmentId) => run(ociCommands.drgList, { compartmentId }, ociCliCommand),
+          compartmentIds,
+        ),
+      ]);
+      const views = new Map<string, OciGatewayStatusView>();
+      for (const result of [nat, internet, service, localPeering, drg]) {
+        if (!result.ok) return result;
+        for (const gateway of result.data as OciAnyGateway[])
+          views.set(gateway.id, gatewayStatusView(gateway.id, gateway));
+      }
+      return { ok: true, data: views };
+    })(),
+  );
+}
+
+// #26 availability domain一覧。FSS系listが`--availability-domain`必須のため必要になる。
+export function fetchAvailabilityDomains(
+  compartmentId: string,
+  ociCliCommand: string,
+): Promise<OciResult<OciAvailabilityDomain[]>> {
+  return toSectionResult(run(ociCommands.availabilityDomainList, { compartmentId }, ociCliCommand));
+}
+
+// #27 FSSスナップショットポリシー一覧(pv-storageページ)。compartment×ADの直積で引く。
+export function fetchFssSnapshotPolicies(
+  compartmentIds: readonly string[],
+  availabilityDomains: readonly string[],
+  ociCliCommand: string,
+): Promise<OciResult<OciFilesystemSnapshotPolicy[]>> {
+  const scopes = compartmentIds.flatMap((compartmentId) =>
+    availabilityDomains.map((availabilityDomain) => ({ compartmentId, availabilityDomain })),
+  );
+  return toSectionResult(
+    mergeLists(scopes.map((scope) => run(ociCommands.fssSnapshotPolicyList, scope, ociCliCommand))),
+  );
+}
+
+// #28 Volumeバックアップポリシー一覧(pv-storageページ)。compartment省略の1本でOracle定義分も拾う。
+export function fetchVolumeBackupPolicies(
+  compartmentIds: readonly string[],
+  ociCliCommand: string,
+): Promise<OciResult<OciVolumeBackupPolicy[]>> {
+  const scopes: { compartmentId?: string }[] = [...compartmentIds.map((compartmentId) => ({ compartmentId })), {}];
+  return toSectionResult(
+    mergeLists(scopes.map((scope) => run(ociCommands.volumeBackupPolicyList, scope, ociCliCommand))),
+  );
+}
+
 // #15 WAFポリシー(networkページ、WAFごとのルール表示用)。
 export function fetchWafPolicy(policyId: string, ociCliCommand: string): Promise<OciResult<OciWafPolicy>> {
   return toSectionResult(run(ociCommands.wafPolicyGet, { webAppFirewallPolicyId: policyId }, ociCliCommand));
 }
 
-// #16 Block Volumeのバックアップポリシー名(pv-storageページ)。割当→ポリシー本体の2段。
+/** ポリシー一覧(#27/#28)から作るOCID→表示名の索引。 */
+export function policyNameIndex(
+  policies: OciResult<{ id: string; "display-name"?: string }[]>,
+): ReadonlyMap<string, string | undefined> {
+  const index = new Map<string, string | undefined>();
+  if (policies.ok) for (const policy of policies.data) index.set(policy.id, policy["display-name"]);
+  return index;
+}
+
+// #16 Block Volumeのバックアップポリシー名(pv-storageページ)。割当は一括ルートが無くasset単位のget。
+// 名前はknownPolicyNamesで解決し、載っていないポリシーだけ本体getへ落とす。
 export function fetchVolumeBackupPolicyName(
   volumeId: string,
   ociCliCommand: string,
+  knownPolicyNames?: ReadonlyMap<string, string | undefined>,
 ): Promise<OciResult<OciBackupPolicyView>> {
   return toSectionResult(
     (async (): Promise<OciResult<OciBackupPolicyView>> => {
@@ -228,6 +386,9 @@ export function fetchVolumeBackupPolicyName(
       if (!assignments.ok) return assignments;
       const policyId = assignments.data[0]?.["policy-id"];
       if (!policyId) return { ok: true, data: { policyName: undefined } };
+      if (knownPolicyNames?.has(policyId)) {
+        return { ok: true, data: { policyId, policyName: knownPolicyNames.get(policyId) } };
+      }
       const policy = await run(ociCommands.volumeBackupPolicyGet, { policyId }, ociCliCommand);
       if (!policy.ok) return policy;
       return { ok: true, data: { policyId, policyName: policy.data["display-name"] } };
@@ -235,13 +396,17 @@ export function fetchVolumeBackupPolicyName(
   );
 }
 
-// #17 FSSスナップショットポリシー名(pv-storageページ)。
+// #17 FSSスナップショットポリシー名(pv-storageページ)。#27の一覧に無いOCIDだけgetへ落とす。
 export function fetchFssSnapshotPolicyName(
   policyId: string,
   ociCliCommand: string,
+  knownPolicyNames?: ReadonlyMap<string, string | undefined>,
 ): Promise<OciResult<OciBackupPolicyView>> {
   return toSectionResult(
     (async (): Promise<OciResult<OciBackupPolicyView>> => {
+      if (knownPolicyNames?.has(policyId)) {
+        return { ok: true, data: { policyId, policyName: knownPolicyNames.get(policyId) } };
+      }
       const policy = await run(
         ociCommands.fssSnapshotPolicyGet,
         { filesystemSnapshotPolicyId: policyId },
@@ -271,83 +436,52 @@ export function fetchManagedCertificate(
   );
 }
 
-// #19 ゲートウェイ状態(networkページ、RTルート宛先の生死表示用)。OCID種別でget先を出し分ける。
+/** ゲートウェイ応答(get/list共通)から状態表示用Viewを作る。種別ごとに見る不健全フィールドが違う。 */
+export function gatewayStatusView(networkEntityId: string, gateway: OciAnyGateway): OciGatewayStatusView {
+  const base = {
+    kind: routeEntityKind(networkEntityId),
+    displayName: gateway["display-name"],
+    lifecycleState: gateway["lifecycle-state"],
+  };
+  switch (gatewayKindOf(networkEntityId)) {
+    case "natgateway":
+    case "servicegateway":
+      return { ...base, blockTraffic: gateway["block-traffic"] };
+    case "internetgateway":
+      return { ...base, isEnabled: gateway["is-enabled"] };
+    case "localpeeringgateway":
+      return { ...base, peeringStatus: gateway["peering-status"] };
+    default:
+      return base;
+  }
+}
+
+// #19 ゲートウェイ状態(networkページ)。型別listで拾えなかったOCIDのフォールバック取得。
 export function fetchGatewayStatus(
   networkEntityId: string,
   ociCliCommand: string,
 ): Promise<OciResult<OciGatewayStatusView>> {
-  const kind = routeEntityKind(networkEntityId);
   const gatewayKind = gatewayKindOf(networkEntityId);
   return toSectionResult(
     (async (): Promise<OciResult<OciGatewayStatusView>> => {
-      switch (gatewayKind) {
-        case "natgateway": {
-          const g = await run(ociCommands.natGatewayGet, { natGatewayId: networkEntityId }, ociCliCommand);
-          if (!g.ok) return g;
-          return {
-            ok: true,
-            data: {
-              kind,
-              displayName: g.data["display-name"],
-              lifecycleState: g.data["lifecycle-state"],
-              blockTraffic: g.data["block-traffic"],
-            },
-          };
+      const gateway = await (async (): Promise<OciResult<OciAnyGateway>> => {
+        switch (gatewayKind) {
+          case "natgateway":
+            return run(ociCommands.natGatewayGet, { natGatewayId: networkEntityId }, ociCliCommand);
+          case "internetgateway":
+            return run(ociCommands.internetGatewayGet, { igId: networkEntityId }, ociCliCommand);
+          case "servicegateway":
+            return run(ociCommands.serviceGatewayGet, { serviceGatewayId: networkEntityId }, ociCliCommand);
+          case "localpeeringgateway":
+            return run(ociCommands.localPeeringGatewayGet, { localPeeringGatewayId: networkEntityId }, ociCliCommand);
+          case "drg":
+            return run(ociCommands.drgGet, { drgId: networkEntityId }, ociCliCommand);
+          default:
+            throw new Error(`Unsupported gateway kind: ${gatewayKind}`);
         }
-        case "internetgateway": {
-          const g = await run(ociCommands.internetGatewayGet, { igId: networkEntityId }, ociCliCommand);
-          if (!g.ok) return g;
-          return {
-            ok: true,
-            data: {
-              kind,
-              displayName: g.data["display-name"],
-              lifecycleState: g.data["lifecycle-state"],
-              isEnabled: g.data["is-enabled"],
-            },
-          };
-        }
-        case "servicegateway": {
-          const g = await run(ociCommands.serviceGatewayGet, { serviceGatewayId: networkEntityId }, ociCliCommand);
-          if (!g.ok) return g;
-          return {
-            ok: true,
-            data: {
-              kind,
-              displayName: g.data["display-name"],
-              lifecycleState: g.data["lifecycle-state"],
-              blockTraffic: g.data["block-traffic"],
-            },
-          };
-        }
-        case "localpeeringgateway": {
-          const g = await run(
-            ociCommands.localPeeringGatewayGet,
-            { localPeeringGatewayId: networkEntityId },
-            ociCliCommand,
-          );
-          if (!g.ok) return g;
-          return {
-            ok: true,
-            data: {
-              kind,
-              displayName: g.data["display-name"],
-              lifecycleState: g.data["lifecycle-state"],
-              peeringStatus: g.data["peering-status"],
-            },
-          };
-        }
-        case "drg": {
-          const g = await run(ociCommands.drgGet, { drgId: networkEntityId }, ociCliCommand);
-          if (!g.ok) return g;
-          return {
-            ok: true,
-            data: { kind, displayName: g.data["display-name"], lifecycleState: g.data["lifecycle-state"] },
-          };
-        }
-        default:
-          throw new Error(`Unsupported gateway kind: ${gatewayKind}`);
-      }
+      })();
+      if (!gateway.ok) return gateway;
+      return { ok: true, data: gatewayStatusView(networkEntityId, gateway.data) };
     })(),
   );
 }

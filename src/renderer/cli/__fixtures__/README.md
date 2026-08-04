@@ -5,7 +5,7 @@
 拡張のレスポンス型（[oci/types.ts](../../oci/types.ts)）はこのフィクスチャを正として書かれており、
 各インターフェースのコメントが対応ファイルを指す。フィールドを増やすときはここで実在キーを確認する。
 
-- 採取日: 2026-07-30
+- 採取日: 2026-07-30(#1〜#20)、2026-08-04(#21〜#28 の list 系)
 - 採取環境: `oci` CLI 3.90.0(Oracle-PythonSDK/2.183.0)、region `ap-tokyo-1`、OKE 1.31 クラスタ
 - 全コマンドに `--output json` を付与。list 系は `--all`、`search resource structured-search` のみ手動ページング
 - 実行はすべて読み取り操作(get / list / search)
@@ -40,7 +40,7 @@
 |---|---|---|
 | get 系 | `{"data": {…}, "etag": "…"}` | `stdout/02-ce-cluster-get.json` |
 | get 系(一部) | `{"data": {…}}`(`etag` なし) | `stdout/20a-lb-backend-set-health-get.json`(LB の backend health のみ。NLB 版には `etag` がある) |
-| list 系(配列直返し) | `{"data": [ … ]}` | `stdout/03-compute-instance-list.json`、`stdout/06-lb-load-balancer-list.json`、`stdout/07-bv-volume-list.json`、`stdout/09-ce-node-pool-list.json`、`stdout/14b-network-nsg-rules-list.json`、`stdout/16b-…` |
+| list 系(配列直返し) | `{"data": [ … ]}` | `stdout/03-compute-instance-list.json`、`stdout/06-lb-load-balancer-list.json`、`stdout/07-bv-volume-list.json`、`stdout/09-ce-node-pool-list.json`、`stdout/14b-network-nsg-rules-list.json`、`stdout/16b-…`、`stdout/21-…`〜`stdout/28-…` |
 | list 系(コレクション包み) | `{"data": {"items": [ … ]}}` | `stdout/05-nlb-network-load-balancer-list.json`、`stdout/10-waf-web-app-firewall-list.json`、`stdout/04-search-structured-search.json` |
 
 - **`opc-next-page` はトップレベルに出る**(`data` の中ではない)。
@@ -56,6 +56,20 @@
 - **結果が無いとき stdout が完全に空(0 バイト)になるコマンドがある**
   → `outcome/16a-bv-backup-policy-assignment-unassigned.json`(exit 0 / stdout 空 / stderr 空)。
   JSON パーサに素で渡すと落ちるため、空 stdout を「該当なし」として扱う分岐が必要
+
+### list と get の応答モデルの差
+
+型別 list へ置き換える判断の根拠(2026-08-04 に実テナンシで get と突合)。
+
+| 種別 | list の応答 | 判定 |
+|---|---|---|
+| subnet / route-table / security-list / nsg / nat-gateway / internet-gateway / service-gateway / local-peering-gateway / drg | get と**キー集合も値も完全一致**(Summary 型が存在しない) | list へ置換 |
+| `bv volume-backup-policy` | get と完全一致(`schedules` も持つ) | list へ置換 |
+| `fs filesystem-snapshot-policy` | Summary。`schedules` が無く `policy-prefix` の値も get と異なる。表示に使う `display-name` は持つ | list へ置換 |
+| `fs file-system` | Summary。**`filesystem-snapshot-policy-id` が無い**(ポリシー割当済みの FS でも出ない) | get 維持 |
+
+`network drg list` に `--vcn-id` は無い(compartment 単位)。
+`fs` 系 list は `--compartment-id` と `--availability-domain` の両方が必須。
 
 ### エラー出力
 
@@ -81,7 +95,7 @@
 - 対話プロンプト(`Do you want to create a new config file? [Y/n]:`)が出る経路があるため、
   子プロセスの stdin は必ず閉じる(`/dev/null`)。閉じていれば EOF で `Abort:` して即終了する
 
-## コマンド → ファイル対応(全 28 コマンド)
+## コマンド → ファイル対応(全 40 コマンド)
 
 `#` は [fetch.ts](../../fetch/fetch.ts) / [anchor.ts](../../fetch/anchor.ts) のコメント番号。
 OCID は下記サニタイズ済みのダミー値で表記している。
@@ -121,6 +135,18 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 | 19e | `network drg get --drg-id …` | `stdout/19e-network-drg-get.json` | 0 |
 | 20a | `lb backend-set-health get --load-balancer-id … --backend-set-name TCP-443` | `stdout/20a-lb-backend-set-health-get.json` | 0 |
 | 20b | `nlb backend-set-health get --network-load-balancer-id … --backend-set-name TCP-443` | `stdout/20b-nlb-backend-set-health-get.json` | 0 |
+| 21 | `network subnet list --compartment-id … --vcn-id … --all` | `stdout/21-network-subnet-list.json` | 0 |
+| 22 | `network route-table list --compartment-id … --vcn-id … --all` | `stdout/22-network-route-table-list.json` | 0 |
+| 23 | `network security-list list --compartment-id … --vcn-id … --all` | `stdout/23-network-security-list-list.json` | 0 |
+| 24 | `network nsg list --compartment-id … --vcn-id … --all` | `stdout/24-network-nsg-list.json` | 0 |
+| 25a | `network nat-gateway list --compartment-id … --vcn-id … --all` | `stdout/25a-network-nat-gateway-list.json` | 0 |
+| 25b | `network internet-gateway list --compartment-id … --vcn-id … --all` | `stdout/25b-network-internet-gateway-list.json` | 0 |
+| 25c | `network service-gateway list --compartment-id … --vcn-id … --all` | `stdout/25c-network-service-gateway-list.json` | 0 |
+| 25d | `network local-peering-gateway list --compartment-id … --vcn-id … --all` | `stdout/25d-network-local-peering-gateway-list.json` | 0 |
+| 25e | `network drg list --compartment-id … --all` | `stdout/25e-network-drg-list.json` | 0 |
+| 26 | `iam availability-domain list --compartment-id … --all` | `stdout/26-iam-availability-domain-list.json` | 0 |
+| 27 | `fs filesystem-snapshot-policy list --compartment-id … --availability-domain … --all` | `stdout/27-fs-filesystem-snapshot-policy-list.json` | 0 |
+| 28 | `bv volume-backup-policy list --all`(compartment 無指定) | `stdout/28-bv-volume-backup-policy-list.json` | 0 |
 
 ## エラー・警告フィクスチャ
 

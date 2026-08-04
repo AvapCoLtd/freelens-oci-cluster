@@ -20,6 +20,7 @@ function loadedState(data: Partial<ClusterOciData>): OciClusterViewState {
     status: "loaded",
     anchor: ANCHOR,
     fetchedAt: 1_700_000_000_000,
+    settled: true,
     data: {
       cluster: NOT_REQUESTED,
       instances: NOT_REQUESTED,
@@ -82,9 +83,16 @@ describe("buildHeaderInfo", () => {
     });
   });
 
+  it("does not mark clusterInfoFailed while the cluster section is still loading", () => {
+    const state = loadedState({
+      cluster: { ok: false, kind: "loading", raw: { message: "loading" } },
+    });
+    expect(buildHeaderInfo(state, "catalog-name").clusterInfoFailed).toBe(false);
+  });
+
   it("falls back to the catalog name (or a placeholder) for non-loaded states", () => {
     expect(buildHeaderInfo({ status: "not_fetched" }, "catalog-name")).toEqual({ clusterName: "catalog-name" });
-    expect(buildHeaderInfo({ status: "fetching", stage: "anchor" }, undefined)).toEqual({
+    expect(buildHeaderInfo({ status: "fetching" }, undefined)).toEqual({
       clusterName: "(cluster name unknown)",
     });
   });

@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-07-31
+last_verified: 2026-08-04
 ---
 
 # freelens-oci-cluster 設計判断の記録
@@ -41,7 +41,11 @@ K8s 起点を正とし、タグ起点は K8s に対応が残っていないリ�
 | クラスタ紐付け | Node providerID 起点の自動解決 | ユーザ設定ゼロ。providerID 単独依存の単一障害点であり、形式が想定外なら「対象外」ガイダンスに落とす |
 | compartment スコーピング | アンカー compartment とタグ検索結果の compartment の和集合ごとに list 実行 | クラスタとリソースの compartment が異なる構成を吸収する。タグ検索完了を待つ2段階取得になるが、並列性より取りこぼし防止を優先した |
 | 取得単位 | ページ単位の遅延取得（クラスタ × セクションのメモリキャッシュ + 手動更新）。ネットワークページの subnet/SL/RT/NSG/WAF ポリシー等は per-OCID の Map セクション | ノードだけ見たいときに他ページ分の取得を待たせない。per-OCID Map は個別リロード（そのブロックだけ再取得）の単位になる |
-| ネットワークページの取得順 | 依存順3ウェーブ（①node-pool/WAF/LB ②subnet get ③SL/RT/NSG rules/ゲートウェイ/ポリシー類）を各ウェーブ内全並列 | subnet 応答から SL/RT の OCID が判明する依存関係。個別 get（OCID 直指定）は compartment 前提を持たず、list 方式の取りこぼしがない |
+| ネットワークページの取得順 | cluster 応答の `vcn-id` とタグ検索の compartment 集合が揃った時点で、型別 list（subnet/RT/SL/NSG/NAT/IGW/SGW/LPG/DRG）を1段で並列発火し、結果を Map へ一括で ready 化する。per-OCID get は list に現れなかった OCID のフォールバックのみ。NSG ルールは一括ルートが無く NSG ごとの `nsg rules list` を次段で並列に撃つ | 律速は直列段数 × API 往復であり、per-OCID get の数珠つなぎ（subnet → SL/RT → ゲートウェイ）がリソース数に比例して段を伸ばしていた。VCN 配下の list は get と同一のフルモデルを返す（Summary 型が無い）ため表示項目を落とさない。VCN が compartment 集合の外にある構成では list が空になるためフォールバックを残す |
+| pv-storage の取得順 | FSS スナップショットポリシーと Volume バックアップポリシーは compartment（× AD）単位の list を PV 読み込みと並走させ、名前解決は索引引きで済ませる。FileSystem 本体は per-OCID get のまま | `fs file-system list` の FileSystemSummary は `filesystem-snapshot-policy-id` を持たず、バックアップ列の表示に足りない。バックアップポリシー割当（`--asset-id` 必須）にも一括ルートが無い |
+| 表示の露出単位 | UI 階層で2段階。①一覧（テーブル行・ステータス）はセクション単位で確定次第それぞれ出す。ただし1つのテーブルは行集合と各行のセル材料が揃うまで出さない（判定は [section-ready.ts](../src/renderer/match/section-ready.ts)）②アコーディオンの中身（SL/RT ルール・NSG ルール・WAF ポリシー・証明書・DNS 解決）は per-OCID の結果が来るまでその場にスピナーを出す。どちらも「成功または失敗」で確定とみなす | 取得段の単位でまとめて出すと、先に返ったテーブルまで待たされて体感が遅くなる。一方でテーブル内で行やセルが後から増えると画面がガタつくのでテーブル単位では原子的に出す。失敗を待ち条件から外すのは、1セクションの権限不足で他が永久に出ないのを防ぐため |
+| （例外）DNS セクション | `section-ready.ts` のゲートを通さず、行集合を K8s（Ingress / Service）から直接組む。各行の解決結果だけが per-OCID のスピナー扱い | 行の材料が OCI ではなく K8s 側にあり、`dnsChecks` の登録を待つと「該当ホスト名なし」を誤って先に出してしまう |
+| 取得中の表示 | スピナー（[spinner.tsx](../src/renderer/components/spinner.tsx)）に統一しテキストラベルは使わない。`Renderer.Component` は Spinner を export しない（FreeLens 1.10.3 の renderer-api/components で確認）ため、本体の `spinner.scss` と同じ幾何の CSS を注入する（注入機構は [injected-style.ts](../src/renderer/components/injected-style.ts) 共通） | 本体 UI（cluster overview 等）と見た目を揃える。「Loading...」の文字は幅を持つため、実データに置き換わるときに列幅と行の高さが動く |
 | backend health | 行の展開時オンデマンド取得のみ | 揮発データ。取得を見た分だけに抑制する |
 | 自動更新 | 全ページ共通トグル（永続化）+ 間隔設定（既定60秒・下限30秒）。再取得は旧データ表示のまま裏で差し替える（force 方式）。周期リトライで自然回復しないエラー（認証系・コマンド起動失敗・互換コマンド非互換・内部エラー）の検出で自動停止しトグルを OFF へ倒す | セクションを idle 化すると更新間隔ごとにページ全体がスピナーへ戻る。自動停止は30〜60秒ごとの oci 実行とエラー連打を防ぐ |
 | LB の IP 照合 | ingress IP と LB の全 IP 集合（public/private）の完全一致。多対一は行複製で表示 | LB は複数 IP・public/private 混在がありうるため比較対象を固定する。同一 LB を複数 Service が使う構成は OKE で正当 |

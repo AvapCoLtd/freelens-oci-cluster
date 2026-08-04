@@ -3,14 +3,16 @@ import { observer } from "mobx-react";
 import type { ClusterOciData } from "../fetch/fetch";
 import { nodePoolNameOfInstance } from "../match/node-pool";
 import { parseProviderId } from "../match/provider-id";
+import { sectionsReady } from "../match/section-ready";
 import { sortRows } from "../match/sort-rows";
 import type { OciInstance } from "../oci/types";
 import { ConsoleButton } from "./console-button";
-import { EmptyState, LOADING_LABEL } from "./empty-state";
+import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { NodePoolSummary } from "./node-pool-summary";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { SortableHeaderCell } from "./sortable-header-cell";
+import { LoadingBlock } from "./spinner";
 import { LifecycleBadge, ReadyBadge } from "./status-badge";
 import { TABLE_STYLE, TD_STYLE, TH_STYLE } from "./table-styles";
 import { useColumnSort } from "./use-column-sort";
@@ -56,8 +58,9 @@ export const NodeTab = observer(function NodeTab({ data, region }: NodeTabProps)
   const nodePools = data.nodePools.ok ? data.nodePools.data : [];
   const [sort, toggleSort] = useColumnSort<NodeColumn>("node");
 
-  if (!nodeStore.isLoaded) {
-    return <EmptyState message={LOADING_LABEL} />;
+  // 行のOCI列が後から埋まるとテーブルがガタつくため、依存セクションが確定してから表を出す。
+  if (!nodeStore.isLoaded || !sectionsReady(data.instances, data.nodePools)) {
+    return <LoadingBlock />;
   }
   const nodes = nodeStore.items;
   if (nodes.length === 0) {

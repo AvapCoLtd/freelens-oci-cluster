@@ -1,0 +1,21 @@
+{
+  "data": [
+    {
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "default/user@example.com",
+          "CreatedOn": "2025-02-14T09:19:26.233Z"
+        }
+      },
+      "display-name": "Internet Gateway example-vcn",
+      "freeform-tags": {},
+      "id": "ocid1.internetgateway.oc1.ap-tokyo-1.aaaaexample0002",
+      "is-enabled": true,
+      "lifecycle-state": "AVAILABLE",
+      "route-table-id": null,
+      "time-created": "2025-02-14T09:19:26.303000+00:00",
+      "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0002"
+    }
+  ]
+}

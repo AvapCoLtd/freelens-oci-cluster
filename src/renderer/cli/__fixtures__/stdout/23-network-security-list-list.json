@@ -1,0 +1,69 @@
+{
+  "data": [
+    {
+      "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+      "defined-tags": {
+        "Oracle-Tags": {
+          "CreatedBy": "default/user@example.com",
+          "CreatedOn": "2025-02-14T09:19:25.655Z"
+        }
+      },
+      "display-name": "Default Security List for example-vcn",
+      "egress-security-rules": [
+        {
+          "description": null,
+          "destination": "0.0.0.0/0",
+          "destination-type": "CIDR_BLOCK",
+          "icmp-options": null,
+          "is-stateless": false,
+          "protocol": "all",
+          "tcp-options": null,
+          "udp-options": null
+        }
+      ],
+      "freeform-tags": {},
+      "id": "ocid1.securitylist.oc1.ap-tokyo-1.aaaaexample0002",
+      "ingress-security-rules": [
+        {
+          "description": null,
+          "icmp-options": {
+            "code": 4,
+            "type": 3
+          },
+          "is-stateless": false,
+          "protocol": "1",
+          "source": "0.0.0.0/0",
+          "source-type": "CIDR_BLOCK",
+          "tcp-options": null,
+          "udp-options": null
+        },
+        {
+          "description": null,
+          "icmp-options": {
+            "code": null,
+            "type": 3
+          },
+          "is-stateless": false,
+          "protocol": "1",
+          "source": "10.0.0.0/16",
+          "source-type": "CIDR_BLOCK",
+          "tcp-options": null,
+          "udp-options": null
+        },
+        {
+          "description": null,
+          "icmp-options": null,
+          "is-stateless": false,
+          "protocol": "6",
+          "source": "203.0.113.1/32",
+          "source-type": "CIDR_BLOCK",
+          "tcp-options": null,
+          "udp-options": null
+        }
+      ],
+      "lifecycle-state": "AVAILABLE",
+      "time-created": "2025-02-14T09:19:25.716000+00:00",
+      "vcn-id": "ocid1.vcn.oc1.ap-tokyo-1.aaaaexample0002"
+    }
+  ]
+}

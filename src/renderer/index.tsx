@@ -1,18 +1,22 @@
 import { Renderer } from "@freelensapp/extensions";
 import { reaction } from "mobx";
 import { ociPreferencesStore } from "../common/store/oci-preferences-store";
-import { ensureExpandableRowStyle, removeExpandableRowStyle } from "./components/expandable-row";
+import { EXPANDABLE_ROW_STYLE } from "./components/expandable-row";
+import { ensureInjectedStyle, removeInjectedStyle } from "./components/injected-style";
 import {
   OciCommandHint,
   OciCommandInput,
   OciPollingIntervalHint,
   OciPollingIntervalInput,
 } from "./components/oci-preference";
+import { SPINNER_STYLE } from "./components/spinner";
 import { OciNetworkPage } from "./pages/oci-network-page";
 import { OciNodesPage } from "./pages/oci-nodes-page";
 import { OciPvStoragePage } from "./pages/oci-pv-storage-page";
 import { OciServiceLbPage } from "./pages/oci-service-lb-page";
 import { ociClusterStore } from "./store/oci-cluster-store";
+
+const INJECTED_STYLES = [EXPANDABLE_ROW_STYLE, SPINNER_STYLE];
 
 export default class OciClusterRenderer extends Renderer.LensExtension {
   clusterPages = [
@@ -86,7 +90,7 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
   private stopSyncingOciCommand?: () => void;
 
   protected onActivate(): void {
-    ensureExpandableRowStyle();
+    for (const { id, css } of INJECTED_STYLES) ensureInjectedStyle(id, css);
     ociPreferencesStore.loadExtension(this);
     // 設定変更を都度反映するためreactionでociClusterStoreへ同期する。
     this.stopSyncingOciCommand = reaction(
@@ -99,6 +103,6 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
 
   protected onDeactivate(): void {
     this.stopSyncingOciCommand?.();
-    removeExpandableRowStyle();
+    for (const { id } of INJECTED_STYLES) removeInjectedStyle(id);
   }
 }
