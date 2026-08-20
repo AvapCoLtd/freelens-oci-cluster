@@ -80,6 +80,14 @@ const TopologyPageContent = observer(function TopologyPageContent({
 
   const [expandedSubnetIds, setExpandedSubnetIds] = React.useState<ReadonlySet<string>>(() => new Set<string>());
   const [selectedId, setSelectedId] = React.useState<string | undefined>(undefined);
+  const [manualRefreshing, setManualRefreshing] = React.useState(false);
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const { query, setQuery } = search;
 
   const generation = snapshot?.generation;
@@ -167,11 +175,18 @@ const TopologyPageContent = observer(function TopologyPageContent({
     <div style={PAGE_STYLE}>
       <OciHeader
         info={buildHeaderInfo(state, catalogName)}
-        fetching={state.status === "fetching" || (state.status === "loaded" && !state.settled)}
+        fetching={state.status === "fetching" || (state.status === "loaded" && !state.settled) || manualRefreshing}
         // 図を消さずに差し替えるためforce再取得を使う。アンカー未解決の初回だけはrefreshで解決からやり直す。
+        // pollRefreshはready済みセクションをloadingに戻さないため、手動時のみ自前のフラグで取得中を示す。
         onRefresh={() => {
-          if (snapshot) void ociClusterStore.pollRefresh(clusterKey, "topology");
-          else ociClusterStore.refresh(clusterKey, "topology");
+          if (!snapshot) {
+            ociClusterStore.refresh(clusterKey, "topology");
+            return;
+          }
+          setManualRefreshing(true);
+          void ociClusterStore.pollRefresh(clusterKey, "topology").finally(() => {
+            if (mountedRef.current) setManualRefreshing(false);
+          });
         }}
         extras={<PollingToggle clusterKey={clusterKey} page="topology" />}
       />
