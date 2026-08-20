@@ -556,10 +556,18 @@ describe("buildTopologyGraph Subnetの絞り込み", () => {
     expect(nodes.some((node) => node.id === SUBNET_OTHER_2)).toBe(false);
     expect(nodeOf(nodes, SUBNET_SUMMARY_ID)).toMatchObject({
       kind: "subnet-summary",
-      label: "other 2 subnets",
+      label: "2 subnets not shown",
       parentId: VCN,
       count: 2,
     });
+  });
+
+  it("件数サマリは畳んだSubnetの名前・CIDR・OCIDを一覧に持つ", () => {
+    const { nodes } = buildTopologyGraph(sharedVcnInput());
+    expect(nodeOf(nodes, SUBNET_SUMMARY_ID).detail).toEqual([
+      { label: `other-${SUBNET_OTHER_1} 10.0.100.0/24`, value: SUBNET_OTHER_1, role: "ocid" },
+      { label: `other-${SUBNET_OTHER_2} 10.0.101.0/24`, value: SUBNET_OTHER_2, role: "ocid" },
+    ]);
   });
 
   it("endpointサブネットは子が無くても残す", () => {
@@ -597,6 +605,28 @@ describe("buildTopologyGraph Subnetの絞り込み", () => {
     const { nodes } = buildTopologyGraph({ ...input, data: { ...input.data, subnets } });
     expect(nodes.some((node) => node.id === SUBNET_ENDPOINT)).toBe(false);
     expect(nodeOf(nodes, SUBNET_SUMMARY_ID).count).toBe(2);
+  });
+
+  it('件数サマリはdisplay-name未設定ならOCID、複数CIDRは", "連結で並べる', () => {
+    const input = sharedVcnInput();
+    const NO_NAME = "ocid1.subnet.oc1.ap-tokyo-1.noname";
+    const DUAL = "ocid1.subnet.oc1.ap-tokyo-1.dual";
+    const subnets = {
+      ...input.data.subnets,
+      [NO_NAME]: anyOk({ id: NO_NAME, "vcn-id": VCN, "route-table-id": RT_OTHER }),
+      [DUAL]: anyOk({
+        id: DUAL,
+        "display-name": "dual-stack",
+        "vcn-id": VCN,
+        "cidr-block": "10.0.102.0/24",
+        "ipv6-cidr-block": "fd00::/64",
+        "route-table-id": RT_OTHER,
+      }),
+    };
+    const { nodes } = buildTopologyGraph({ ...input, data: { ...input.data, subnets } });
+    const detail = nodeOf(nodes, SUBNET_SUMMARY_ID).detail;
+    expect(detail).toContainEqual({ label: "dual-stack 10.0.102.0/24, fd00::/64", value: DUAL, role: "ocid" });
+    expect(detail).toContainEqual({ label: NO_NAME, value: NO_NAME, role: "ocid" });
   });
 });
 

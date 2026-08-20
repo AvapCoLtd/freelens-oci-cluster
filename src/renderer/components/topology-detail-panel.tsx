@@ -37,6 +37,15 @@ const TABLE_STYLE: React.CSSProperties = {
   tableLayout: "fixed",
 };
 
+// 件数サマリのように長いラベル(Subnet名)を持つ行があるため、共通THのnowrapを外して折り返す
+const LABEL_STYLE: React.CSSProperties = {
+  ...TH_STYLE,
+  width: 120,
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
+  verticalAlign: "top",
+};
+
 const VALUE_STYLE: React.CSSProperties = {
   ...TD_STYLE,
   whiteSpace: "pre-line",
@@ -62,8 +71,8 @@ export function TopologyDetailPanel({ node, onClose }: TopologyDetailPanelProps)
       <table style={TABLE_STYLE}>
         <tbody>
           {node.detail.map((row) => (
-            <tr key={row.label}>
-              <th style={{ ...TH_STYLE, width: 110 }}>{row.label}</th>
+            <tr key={`${row.label} ${row.value}`}>
+              <th style={LABEL_STYLE}>{row.label}</th>
               <td style={VALUE_STYLE}>
                 {row.value}
                 {row.role === "ocid" && <OcidCopyButton ocid={row.value} />}

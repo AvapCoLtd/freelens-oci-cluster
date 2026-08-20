@@ -13,7 +13,7 @@ export type { TopologySide } from "./topology-routes";
 export const NODE_KIND_LABEL: Record<TopologyNodeKind, string> = {
   vcn: "VCN",
   subnet: "Subnet",
-  "subnet-summary": "Subnets",
+  "subnet-summary": "Other Subnets",
   "instance-group": "Instances",
   instance: "Instance",
   lb: "LB",

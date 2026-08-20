@@ -288,6 +288,13 @@ function subnetCidrs(subnet: OciSubnet): string[] {
   return [...cidrs];
 }
 
+/** 件数サマリの一覧行に使う「name cidr, ...」表記。 */
+function subnetRowLabel(subnetId: string, subnet: OciSubnet): string {
+  const name = subnet["display-name"] ?? subnetId;
+  const cidrs = subnetCidrs(subnet);
+  return cidrs.length > 0 ? `${name} ${cidrs.join(", ")}` : name;
+}
+
 function vcnCidrs(vcn: OciVcn): string[] {
   const cidrs = new Set<string>();
   for (const cidr of [vcn["cidr-block"], ...(vcn["cidr-blocks"] ?? []), ...(vcn["ipv6-cidr-blocks"] ?? [])]) {
@@ -550,16 +557,21 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
       consoleUrl: vcnId ? consoleUrlOf("subnet", subnetId, vcnId) : undefined,
     });
   }
-  const otherSubnetCount = subnets.length - shownSubnets.length;
-  if (vcnParentId && otherSubnetCount > 0) {
+  const otherSubnets = subnets.filter(([subnetId]) => !shownSubnetIds.has(subnetId));
+  if (vcnParentId && otherSubnets.length > 0) {
     putNode({
       id: SUBNET_SUMMARY_ID,
       kind: "subnet-summary",
-      label: `other ${otherSubnetCount} subnets`,
+      label: `${otherSubnets.length} subnets not shown`,
       parentId: vcnParentId,
       status: "unknown",
-      detail: [],
-      count: otherSubnetCount,
+      // 1 Subnet = 1行
+      detail: detailOf(
+        [...otherSubnets]
+          .sort((a, b) => compareText(a[1]["display-name"] ?? a[0], b[1]["display-name"] ?? b[0]))
+          .map(([subnetId, subnet]) => text(subnetRowLabel(subnetId, subnet), subnetId, "ocid")),
+      ),
+      count: otherSubnets.length,
     });
   }
 

@@ -104,7 +104,7 @@ const TopologyPageContent = observer(function TopologyPageContent({ clusterKey }
       setSelectedId(undefined);
       return;
     }
-    // 件数サマリのような詳細を持たないノードは空パネルになるだけなので開かない
+    // 詳細を持たないノードは空パネルになるだけなので開かない
     setSelectedId(node && node.detail.length > 0 ? id : undefined);
   };
 
