@@ -316,6 +316,32 @@ describe("layoutTopology 隣接性", () => {
     expect(placementOrder(nodes, VCN)).toEqual([withLb, withInstance, empty]);
   });
 
+  it("VCN内のSubnetは段ごとに縦へ積み、段を跨いで同じ行に混ざらない", () => {
+    const lbSubnets = ["c-lb0", "c-lb1", "c-lb2", "c-lb3", "c-lb4"].map(
+      (name) => `ocid1.subnet.oc1.ap-tokyo-1.${name}`,
+    );
+    const withInstance = "ocid1.subnet.oc1.ap-tokyo-1.a-instance";
+    const empty = "ocid1.subnet.oc1.ap-tokyo-1.b-empty";
+    const input: TopologyNode[] = [
+      node(VCN, "vcn"),
+      node(withInstance, "subnet", VCN),
+      node(empty, "subnet", VCN),
+      node("ocid1.instance.oc1.ap-tokyo-1.i1", "instance", withInstance),
+    ];
+    for (const [index, subnetId] of lbSubnets.entries()) {
+      input.push(node(subnetId, "subnet", VCN));
+      input.push(node(`ocid1.loadbalancer.oc1.ap-tokyo-1.lb${index}`, "lb", subnetId));
+    }
+    const rects = absoluteRects(layoutTopology(input).nodes);
+    const bottomOf = (id: string) => {
+      const rect = rects.get(id) as Rect;
+      return rect.y + rect.height;
+    };
+    // LB持ち5つは3列に折り返すが、Instance持ちはその空き列に入らず次の段へ落ちる
+    expect((rects.get(withInstance) as Rect).y).toBeGreaterThanOrEqual(Math.max(...lbSubnets.map(bottomOf)));
+    expect((rects.get(empty) as Rect).y).toBeGreaterThanOrEqual(bottomOf(withInstance));
+  });
+
   it("左レーンはService→WAF→VCNの順に上から降り、VCNの下には何も置かない", () => {
     const { nodes } = layoutTopology(sampleNodes());
     const rects = absoluteRects(nodes);

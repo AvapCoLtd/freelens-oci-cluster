@@ -284,7 +284,17 @@ function addTo(map: Map<string, string[]>, key: string, value: string): void {
 }
 
 /**
+ * VCN直下でSubnetを積む段の判定。上から順にトラフィックが降りる並びで、
+ * 先頭から見て最初に真になった段に置く(どれも真にならなければ残りの段)。
+ */
+const SUBNET_TIER_RULES: readonly ((children: readonly TopologyNode[]) => boolean)[] = [
+  (children) => children.some((child) => child.kind === "lb" || child.kind === "nlb"),
+  (children) => children.some((child) => child.kind === "instance" || child.kind === "instance-group"),
+];
+
+/**
  * 包含構造(parentId)から座標と親ボックスサイズを決める。
+ * VCNの外(左レーンの帯)も中(Subnetの段)も、トラフィックが上から下へ降りる順で積む。
  * edgesは帯の中の並び順にだけ使う(繋がるノードを隣接させる)。
  * 入力配列の順序に依らず同一結果を返し、子は必ず親の内側(パディング込み)に収まる。
  */
@@ -314,24 +324,24 @@ export function layoutTopology(nodes: readonly TopologyNode[], edges: readonly T
   }
   const placedAtRoot = (node: TopologyNode) => node.kind !== "gateway" || vcnNodes.length !== 1;
 
-  /** VCN直下の並び順。エッジで繋がる箱を近づけるため、LB/NLB持ち→Instance持ち→残りのSubnetの順に置く。 */
-  const subnetRank = (node: TopologyNode): number => {
-    if (node.kind !== "subnet") return 3;
+  const subnetTier = (node: TopologyNode): number => {
+    if (node.kind !== "subnet") return SUBNET_TIER_RULES.length;
     const children = childrenOf.get(node.id) ?? [];
-    if (children.some((child) => child.kind === "lb" || child.kind === "nlb")) return 0;
-    if (children.some((child) => child.kind === "instance" || child.kind === "instance-group")) return 1;
-    return 2;
+    const tier = SUBNET_TIER_RULES.findIndex((rule) => rule(children));
+    return tier === -1 ? SUBNET_TIER_RULES.length : tier;
   };
 
   const buildBox = (node: TopologyNode): Box => {
     const children = childrenOf.get(node.id) ?? [];
     if (node.kind === "vcn") {
       const gateways = children.filter((child) => child.kind === "gateway").sort(compareNodes);
-      const rest = [...children]
-        .filter((child) => child.kind !== "gateway")
-        .sort((a, b) => subnetRank(a) - subnetRank(b) || compareNodes(a, b));
+      const tiers: Box[][] = Array.from({ length: SUBNET_TIER_RULES.length + 1 }, () => []);
+      for (const child of [...children].filter((child) => child.kind !== "gateway").sort(compareNodes)) {
+        (tiers[subnetTier(child)] as Box[]).push(buildBox(child));
+      }
+      // 段は個別に格子へ詰めて縦に連結する。1つの格子へ混ぜるとbackendエッジが横・斜めに走る。
       // ゲートウェイはSubnetの格子に混ぜず最下行にまとめる
-      const rows = [...gridRows(rest.map(buildBox)), ...chunk(gateways.map(buildBox), MAX_COLUMNS)];
+      const rows = [...tiers.flatMap((tier) => gridRows(tier)), ...chunk(gateways.map(buildBox), MAX_COLUMNS)];
       return container(node.id, false, VCN_PADDING, VCN_GAP, rows, CONTAINER_HEADER);
     }
     if (node.kind === "subnet")
