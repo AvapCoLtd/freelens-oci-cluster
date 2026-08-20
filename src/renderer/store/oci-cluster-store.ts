@@ -9,6 +9,7 @@ import {
   fetchBackendSetHealth,
   fetchCluster,
   fetchFileSystem,
+  fetchFssExport,
   fetchFssSnapshotPolicies,
   fetchFssSnapshotPolicyName,
   fetchGatewayStatus,
@@ -22,6 +23,7 @@ import {
   fetchSecurityList,
   fetchSubnet,
   fetchTaggedResources,
+  fetchVcn,
   fetchVcnGateways,
   fetchVcnNsgs,
   fetchVcnRouteTables,
@@ -38,18 +40,20 @@ import { collectHostnames } from "../match/dns-check";
 import { gatewayIdsOfRouteTables, type OciGatewayStatusView } from "../match/gateway-status";
 import { managedCertificateIdsOf } from "../match/lb-certificates";
 import { clusterLbIds, collectNsgIds, collectSubnetIds, internalIpsOfNodes } from "../match/network-path";
-import type { OciPage } from "../match/page-sections";
-import { sectionsForPage } from "../match/page-sections";
+import type { OciPage, TopologySection } from "../match/page-sections";
+import { sectionsForPage, TOPOLOGY_SECTIONS } from "../match/page-sections";
 import { pickAnchorInstanceId } from "../match/provider-id";
 import {
   distinctBlockVolumeOcids,
-  distinctFileSystemOcids,
+  distinctFssRefOcids,
+  fileSystemOcidsOf,
   getCsiSource,
-  newFileSystemOcids,
+  isFssExportOcid,
   resolvePvStorage,
+  unstartedOcids,
 } from "../match/pv-storage";
 import { ingressIpsOfServices } from "../match/service-lb";
-import type { OciErrorKind, OciRawErrorInfo, OciResult } from "../oci/result";
+import { isResourceNotFound, type OciErrorKind, type OciRawErrorInfo, type OciResult } from "../oci/result";
 import type {
   OciAvailabilityDomain,
   OciBackendSetHealthView,
@@ -57,6 +61,7 @@ import type {
   OciCluster,
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
+  OciFssExport,
   OciInstance,
   OciLoadBalancer,
   OciManagedCertView,
@@ -68,6 +73,7 @@ import type {
   OciRouteTable,
   OciSecurityList,
   OciSubnet,
+  OciVcn,
   OciVolume,
   OciVolumeBackupPolicy,
   OciWafPolicy,
@@ -102,9 +108,36 @@ type SectionState<T> =
   | { status: "loading" }
   | { status: "ready"; result: OciResult<T>; fetchedAt: number };
 
+/** セクションの進行状態。"failed"も確定であり、topologyページは描画をブロックせず欠落として扱う。 */
+export type TopologySectionStatus = "loading" | "ok" | "failed";
+
+export interface TopologySectionProgress {
+  section: TopologySection;
+  status: TopologySectionStatus;
+}
+
+/** 全必要セクション確定時点のClusterOciDataと、その確定ごとに進む更新世代。 */
+export interface TopologySnapshot {
+  data: ClusterOciData;
+  generation: number;
+}
+
+/**
+ * per-OCID Mapを埋める側の取得結果。Mapへseedした後もlist自体の成否を残す。
+ * これが無いとMapが空のときに「対象が無い」と「網羅取得に失敗した」を区別できない。
+ */
+type ReconcileOutcomeKey = "fileSystems" | "vcn" | "subnets" | "routeTables" | "securityLists" | "nsgs" | "gateways";
+
+// VcnNetwork.resultsのキー(型別listの取得単位)。
+const VCN_LIST_SECTIONS = ["subnets", "routeTables", "securityLists", "nsgs", "gateways"] as const;
+
+type VcnListSection = (typeof VCN_LIST_SECTIONS)[number];
+
 // networkページのper-OCID遅延取得Map群(subnet/SL/RT/NSG)。backendHealthsのみ展開時オンデマンド。
 type OcidMapKey =
   | "fileSystems"
+  | "fssExports"
+  | "vcns"
   | "subnets"
   | "securityLists"
   | "routeTables"
@@ -132,7 +165,10 @@ interface ClusterCache {
   fssSnapshotPolicyList: SectionState<OciFilesystemSnapshotPolicy[]>;
   volumeBackupPolicyList: SectionState<OciVolumeBackupPolicy[]>;
   fileSystems: Map<string, SectionState<OciFileSystem>>;
+  fssExports: Map<string, SectionState<OciFssExport>>;
   fileSystemsReconciled: boolean;
+  vcns: Map<string, SectionState<OciVcn>>;
+  vcnsReconciled: boolean;
   subnets: Map<string, SectionState<OciSubnet>>;
   securityLists: Map<string, SectionState<OciSecurityList>>;
   routeTables: Map<string, SectionState<OciRouteTable>>;
@@ -145,6 +181,7 @@ interface ClusterCache {
   fssSnapshotPolicies: Map<string, SectionState<OciBackupPolicyView>>;
   backendHealths: Map<string, SectionState<OciBackendSetHealthView>>;
   networkReconciled: boolean;
+  reconcileOutcomes: ReadonlyMap<ReconcileOutcomeKey, OciResult<unknown>>;
   // Serviceはnamespaced resourceのためloadAll()既定(=トップバー選択中のnamespaceのみ)だと
   // フィルタ外のLoadBalancer Serviceが読めない。service-lbページ用に全namespace指定でloadAll済みか。
   serviceNamespacesLoaded: boolean;
@@ -166,7 +203,10 @@ function createIdleCache(): ClusterCache {
     fssSnapshotPolicyList: { status: "idle" },
     volumeBackupPolicyList: { status: "idle" },
     fileSystems: new Map(),
+    fssExports: new Map(),
     fileSystemsReconciled: false,
+    vcns: new Map(),
+    vcnsReconciled: false,
     subnets: new Map(),
     securityLists: new Map(),
     routeTables: new Map(),
@@ -179,6 +219,7 @@ function createIdleCache(): ClusterCache {
     fssSnapshotPolicies: new Map(),
     backendHealths: new Map(),
     networkReconciled: false,
+    reconcileOutcomes: new Map(),
     serviceNamespacesLoaded: false,
     requestedPages: new Set(),
   };
@@ -191,7 +232,7 @@ interface VcnNetwork {
   securityLists: ReadonlySet<string>;
   gateways: ReadonlySet<string>;
   nsgs: ReadonlyMap<string, OciNsg>;
-  results: OciResult<unknown>[];
+  results: ReadonlyMap<VcnListSection, OciResult<unknown>>;
 }
 
 const EMPTY_VCN_NETWORK: VcnNetwork = {
@@ -200,7 +241,7 @@ const EMPTY_VCN_NETWORK: VcnNetwork = {
   securityLists: new Set(),
   gateways: new Set(),
   nsgs: new Map(),
-  results: [],
+  results: new Map(),
 };
 
 const NOT_REQUESTED_MESSAGE = "section not requested for this page";
@@ -219,6 +260,19 @@ export function backendHealthKey(kind: "lb" | "nlb", lbId: string, backendSetNam
   return `${kind}:${lbId}:${backendSetName}`;
 }
 
+function sectionStatus(section: SectionState<unknown>): TopologySectionStatus {
+  if (section.status !== "ready") return "loading";
+  return section.result.ok ? "ok" : "failed";
+}
+
+/**
+ * スナップショット2件が同じ取得結果を指すか。ClusterOciDataの各フィールドは確定済みcacheから
+ * 参照ごと持ち回るため、内容比較でなく同一性比較で足りる。
+ */
+function sameClusterOciData(a: ClusterOciData, b: ClusterOciData): boolean {
+  return (Object.keys(a) as (keyof ClusterOciData)[]).every((key) => a[key] === b[key]);
+}
+
 function sectionResultOrPlaceholder<T>(section: SectionState<T>): OciResult<T> {
   if (section.status === "ready") return section.result;
   // 取得開始済み(loading)はページが要求したセクション。idleは他ページ専用で、このページでは叩かない。
@@ -235,11 +289,16 @@ export class OciClusterStore {
   ociCliCommand = "";
 
   private readonly caches = observable.map<string, ClusterCache>();
+  // deep:falseは必須。deep変換されるとClusterOciDataの各フィールドが差し替えのたび別インスタンスになり、
+  // 世代を進めるべきかの同一性判定が常に「変化あり」になる。
+  private readonly topologySnapshots = observable.map<string, TopologySnapshot>(undefined, { deep: false });
   // クラスタキー+セクション名をキーにした進行中Promiseの登録簿。複数ページから同じセクションが
   // 要求されても1本のfetchにまとめるための単純化(mobxの状態自体は判定に使わない)。
   private readonly inFlight = new Map<string, Promise<unknown>>();
   // refresh()で進むクラスタ単位の取得世代。旧世代の結果を書き戻すとrefreshで消した値が復活する。
   private readonly epochs = new Map<string, number>();
+  // 確定スナップショットの採番。ページはこの値の変化をOCI側入力の差し替え契機にする。
+  private readonly topologyGenerations = new Map<string, number>();
 
   constructor() {
     makeObservable(this, {
@@ -284,6 +343,23 @@ export class OciClusterStore {
     };
   }
 
+  /**
+   * topologyページの必要セクション集合を、進捗表示と同じ順序で状態つきに列挙する。
+   * "failed"も確定であり、ページはこれを欠落種別として扱う("ok"かつ空集合との区別がここで付く)。
+   */
+  getTopologyProgress(clusterKey: string): TopologySectionProgress[] {
+    const cache = this.getCache(clusterKey);
+    return TOPOLOGY_SECTIONS.map((section) => ({ section, status: this.topologySectionStatus(cache, section) }));
+  }
+
+  /**
+   * 全必要セクションが確定した時点で採ったClusterOciDataと更新世代。
+   * force更新中はセクションが個別に差し替わるため、cacheを直接読むと新旧混在のデータになる。
+   */
+  getTopologySnapshot(clusterKey: string): TopologySnapshot | undefined {
+    return this.topologySnapshots.get(clusterKey);
+  }
+
   /** ページが必要とするセクションのうち未開始のものだけ取得を開始する(取得中/取得済みなら何もしない)。 */
   ensureLoaded(clusterKey: string, page: OciPage): void {
     const cache = this.getCache(clusterKey);
@@ -302,9 +378,20 @@ export class OciClusterStore {
   refresh(clusterKey: string, page: OciPage): void {
     this.epochs.set(clusterKey, this.epochOf(clusterKey) + 1);
     const patch: Partial<ClusterCache> = { anchor: { status: "idle" }, cluster: { status: "idle" } };
+    // 他ページ専用セクションの成否は温存するため、消すのは再取得するセクションの分だけ。
+    const outcomes = new Map(this.getCache(clusterKey).reconcileOutcomes);
+    if (page === "topology") runInAction(() => this.topologySnapshots.delete(clusterKey));
     for (const key of sectionsForPage(page)) {
+      if (key === "vcn") {
+        patch.vcns = new Map();
+        patch.vcnsReconciled = false;
+        outcomes.delete("vcn");
+        continue;
+      }
       if (key === "fileSystems") {
+        outcomes.delete("fileSystems");
         patch.fileSystems = new Map();
+        patch.fssExports = new Map();
         patch.fileSystemsReconciled = false;
         patch.volumeBackupPolicies = new Map();
         patch.fssSnapshotPolicies = new Map();
@@ -324,10 +411,12 @@ export class OciClusterStore {
         patch.managedCerts = new Map();
         patch.backendHealths = new Map();
         patch.networkReconciled = false;
+        for (const listSection of VCN_LIST_SECTIONS) outcomes.delete(listSection);
         continue;
       }
       patch[key] = { status: "idle" };
     }
+    patch.reconcileOutcomes = outcomes;
     if (page === "service-lb") patch.serviceNamespacesLoaded = false;
     this.updateCache(clusterKey, patch);
     this.ensureLoaded(clusterKey, page);
@@ -342,10 +431,12 @@ export class OciClusterStore {
     const cache = this.getCache(clusterKey);
     if (cache.anchor.status !== "resolved") return undefined;
     const { clusterId, compartmentId } = cache.anchor.anchor;
+    const epoch = this.epochOf(clusterKey);
     const sections = sectionsForPage(page);
     const jobs: Promise<OciResult<unknown> | OciResult<unknown>[]>[] = [
       this.ensureCluster(clusterKey, clusterId, true),
     ];
+    if (sections.includes("vcn")) jobs.push(this.reconcileVcns(clusterKey, clusterId, true));
     if (sections.includes("instances")) jobs.push(this.ensureInstances(clusterKey, compartmentId, true));
     if (sections.includes("taggedResources")) jobs.push(this.ensureTaggedResources(clusterKey, clusterId, true));
     if (sections.includes("nlbs")) jobs.push(this.ensureNlbs(clusterKey, compartmentId, clusterId, true));
@@ -359,20 +450,24 @@ export class OciClusterStore {
     }
     if (sections.includes("network")) {
       jobs.push(this.reconcileNetwork(clusterKey, clusterId, compartmentId, true));
-      for (const key of cache.backendHealths.keys()) {
-        const [kind, lbId, ...nameParts] = key.split(":");
-        jobs.push(
-          this.ensureMapValue(
-            clusterKey,
-            "backendHealths",
-            key,
-            () => fetchBackendSetHealth(kind as "lb" | "nlb", lbId, nameParts.join(":"), this.ociCliCommand),
-            true,
-          ),
-        );
+      // backendHealthsは展開時オンデマンドのため図に出さないtopologyページでは再取得しない。
+      if (page === "network") {
+        for (const key of cache.backendHealths.keys()) {
+          const [kind, lbId, ...nameParts] = key.split(":");
+          jobs.push(
+            this.ensureMapValue(
+              clusterKey,
+              "backendHealths",
+              key,
+              () => fetchBackendSetHealth(kind as "lb" | "nlb", lbId, nameParts.join(":"), this.ociCliCommand),
+              true,
+            ),
+          );
+        }
       }
     }
     const results = (await Promise.all(jobs)).flat();
+    if (page === "topology") this.captureTopologySnapshot(clusterKey, epoch);
     const stopError = results.find((result) => !result.ok && POLLING_STOP_ERROR_KINDS.has(result.kind));
     return stopError && !stopError.ok ? stopError.kind : undefined;
   }
@@ -415,10 +510,111 @@ export class OciClusterStore {
     });
   }
 
+  /** per-OCID Mapを埋めた側(型別list・reconcile起点)の成否を記録する。旧世代の結果は書き戻さない。 */
+  private recordReconcileOutcomes(
+    clusterKey: string,
+    epoch: number,
+    entries: Iterable<readonly [ReconcileOutcomeKey, OciResult<unknown>]>,
+  ): void {
+    if (this.epochOf(clusterKey) !== epoch) return;
+    runInAction(() => {
+      const cache = this.getCache(clusterKey);
+      const outcomes = new Map(cache.reconcileOutcomes);
+      for (const [key, result] of entries) outcomes.set(key, result);
+      this.caches.set(clusterKey, { ...cache, reconcileOutcomes: outcomes });
+    });
+  }
+
+  private topologySectionStatus(cache: ClusterCache, section: TopologySection): TopologySectionStatus {
+    switch (section) {
+      case "cluster":
+      case "taggedResources":
+      case "instances":
+      case "nodePools":
+      case "lbs":
+      case "nlbs":
+      case "wafs":
+      case "volumes":
+        return sectionStatus(cache[section]);
+      case "fileSystems":
+        return this.mapSectionStatus(cache, cache.fileSystemsReconciled, "fileSystems", [
+          cache.fssExports,
+          cache.fileSystems,
+        ]);
+      // ポリシー類の列挙元はFSS/Volumeの走査そのもので、ポリシー一覧の失敗は名前解決がgetへ落ちるだけ。
+      case "volumeBackupPolicies":
+        return this.mapSectionStatus(cache, cache.fileSystemsReconciled, "fileSystems", [cache.volumeBackupPolicies]);
+      case "fssSnapshotPolicies":
+        return this.mapSectionStatus(cache, cache.fileSystemsReconciled, "fileSystems", [cache.fssSnapshotPolicies]);
+      case "vcn":
+        return this.mapSectionStatus(cache, cache.vcnsReconciled, "vcn", [cache.vcns]);
+      case "subnets":
+        return this.mapSectionStatus(cache, cache.networkReconciled, "subnets", [cache.subnets]);
+      case "routeTables":
+        return this.mapSectionStatus(cache, cache.networkReconciled, "routeTables", [cache.routeTables]);
+      case "securityLists":
+        return this.mapSectionStatus(cache, cache.networkReconciled, "securityLists", [cache.securityLists]);
+      case "nsgs":
+        return this.mapSectionStatus(cache, cache.networkReconciled, "nsgs", [cache.nsgs]);
+      case "gateways":
+        return this.mapSectionStatus(cache, cache.networkReconciled, "gateways", [cache.gateways]);
+      // 列挙元はLBのlistener定義で、その網羅性はlbsセクションの成否がそのまま表す。
+      case "managedCerts":
+        return this.entrySectionStatus(cache.networkReconciled, [cache.managedCerts]);
+      // 行集合の出所はK8s(Ingress/Service)。ホスト名が1つも組めなければ待ち対象なし=okになる。
+      case "dnsChecks":
+        return this.entrySectionStatus(cache.networkReconciled, [cache.dnsChecks]);
+    }
+  }
+
+  private mapSectionStatus(
+    cache: ClusterCache,
+    reconciled: boolean,
+    outcomeKey: ReconcileOutcomeKey,
+    maps: Map<string, SectionState<unknown>>[],
+  ): TopologySectionStatus {
+    const status = this.entrySectionStatus(reconciled, maps);
+    if (status !== "ok") return status;
+    const outcome = cache.reconcileOutcomes.get(outcomeKey);
+    return outcome && !outcome.ok ? "failed" : "ok";
+  }
+
+  /** per-OCID Mapのエントリだけで決まる状態(Mapを埋めた側のlistの成否は含まない)。 */
+  private entrySectionStatus(reconciled: boolean, maps: Map<string, SectionState<unknown>>[]): TopologySectionStatus {
+    if (!reconciled || !this.mapsSettled(maps)) return "loading";
+    for (const map of maps) {
+      for (const state of map.values()) {
+        // 実体なしは孤立PVとして図側が表示する観測結果で、セクションの取得失敗ではない。
+        if (state.status === "ready" && !state.result.ok && !isResourceNotFound(state.result)) return "failed";
+      }
+    }
+    return "ok";
+  }
+
+  /**
+   * 全必要セクション確定時点のClusterOciDataをスナップショットへ確定させる。
+   * 呼び出し側が取得サイクルの完了を待ってから呼ぶ(確定前に呼ぶと新旧混在のデータを載せる)。
+   */
+  private captureTopologySnapshot(clusterKey: string, epoch: number): void {
+    if (this.epochOf(clusterKey) !== epoch) return;
+    const data = this.buildClusterOciData(this.getCache(clusterKey));
+    const previous = this.topologySnapshots.get(clusterKey);
+    // 内容が変わらない世代更新はページに図の再導出を強いるだけになる
+    if (previous && sameClusterOciData(previous.data, data)) return;
+    // refreshでスナップショットを捨てても採番は戻さない: 世代が一致すると差し替えを見落とす
+    const generation = (this.topologyGenerations.get(clusterKey) ?? 0) + 1;
+    this.topologyGenerations.set(clusterKey, generation);
+    runInAction(() => this.topologySnapshots.set(clusterKey, { data, generation }));
+  }
+
   /** ページの全セクションが確定したか。status="ready"は失敗結果も含むため失敗を待ち続けない。 */
   private pageSettled(cache: ClusterCache, page: OciPage): boolean {
     if (cache.cluster.status !== "ready") return false;
     for (const key of sectionsForPage(page)) {
+      if (key === "vcn") {
+        if (!cache.vcnsReconciled || !this.mapsSettled([cache.vcns])) return false;
+        continue;
+      }
       if (key === "fileSystems") {
         if (!this.fileSystemsSettled(cache)) return false;
         continue;
@@ -443,7 +639,12 @@ export class OciClusterStore {
 
   private fileSystemsSettled(cache: ClusterCache): boolean {
     if (!cache.fileSystemsReconciled) return false;
-    return this.mapsSettled([cache.fileSystems, cache.volumeBackupPolicies, cache.fssSnapshotPolicies]);
+    return this.mapsSettled([
+      cache.fssExports,
+      cache.fileSystems,
+      cache.volumeBackupPolicies,
+      cache.fssSnapshotPolicies,
+    ]);
   }
 
   // backendHealthsは展開時オンデマンドのため条件に含めない。
@@ -470,7 +671,12 @@ export class OciClusterStore {
     };
     if (cache.cluster.status === "ready") timestamps.push(cache.cluster.fetchedAt);
     for (const key of sectionsForPage(page)) {
+      if (key === "vcn") {
+        pushMap(cache.vcns);
+        continue;
+      }
       if (key === "fileSystems") {
+        pushMap(cache.fssExports);
         pushMap(cache.fileSystems);
         pushMap(cache.volumeBackupPolicies);
         pushMap(cache.fssSnapshotPolicies);
@@ -524,6 +730,8 @@ export class OciClusterStore {
       nodePools: sectionResultOrPlaceholder(cache.nodePools),
       wafs: sectionResultOrPlaceholder(cache.wafs),
       fileSystems: this.toRecord(cache.fileSystems),
+      fssExports: this.toRecord(cache.fssExports),
+      vcns: this.toRecord(cache.vcns),
       subnets: this.toRecord(cache.subnets),
       securityLists: this.toRecord(cache.securityLists),
       routeTables: this.toRecord(cache.routeTables),
@@ -622,16 +830,23 @@ export class OciClusterStore {
     const { clusterId, compartmentId } = cache.anchor.anchor;
     const sections = sectionsForPage(page);
 
-    if (sections.includes("instances")) void this.ensureInstances(clusterKey, compartmentId);
-    if (sections.includes("taggedResources")) void this.ensureTaggedResources(clusterKey, clusterId);
-    if (sections.includes("nlbs")) void this.ensureNlbs(clusterKey, compartmentId, clusterId);
-    if (sections.includes("lbs")) void this.ensureLbs(clusterKey, compartmentId, clusterId);
-    if (sections.includes("volumes")) void this.ensureVolumes(clusterKey, compartmentId, clusterId);
-    if (sections.includes("fileSystems")) void this.reconcileFileSystems(clusterKey, clusterId, compartmentId);
-    if (sections.includes("nodePools")) void this.ensureNodePools(clusterKey, clusterId, compartmentId);
-    if (sections.includes("wafs")) void this.ensureWafs(clusterKey, compartmentId, clusterId);
-    if (sections.includes("network")) void this.reconcileNetwork(clusterKey, clusterId, compartmentId);
-    if (page === "service-lb") void this.ensureServiceNamespaces(clusterKey);
+    const jobs: Promise<unknown>[] = [];
+    if (sections.includes("instances")) jobs.push(this.ensureInstances(clusterKey, compartmentId));
+    if (sections.includes("taggedResources")) jobs.push(this.ensureTaggedResources(clusterKey, clusterId));
+    if (sections.includes("nlbs")) jobs.push(this.ensureNlbs(clusterKey, compartmentId, clusterId));
+    if (sections.includes("lbs")) jobs.push(this.ensureLbs(clusterKey, compartmentId, clusterId));
+    if (sections.includes("volumes")) jobs.push(this.ensureVolumes(clusterKey, compartmentId, clusterId));
+    if (sections.includes("fileSystems")) jobs.push(this.reconcileFileSystems(clusterKey, clusterId, compartmentId));
+    if (sections.includes("nodePools")) jobs.push(this.ensureNodePools(clusterKey, clusterId, compartmentId));
+    if (sections.includes("wafs")) jobs.push(this.ensureWafs(clusterKey, compartmentId, clusterId));
+    if (sections.includes("vcn")) jobs.push(this.reconcileVcns(clusterKey, clusterId));
+    if (sections.includes("network")) jobs.push(this.reconcileNetwork(clusterKey, clusterId, compartmentId));
+    // Serviceを読むページは、トップバーのnamespace絞り込みに関係なく全namespaceを載せる必要がある。
+    if (page === "service-lb" || page === "topology") jobs.push(this.ensureServiceNamespaces(clusterKey));
+    if (page === "topology") {
+      const epoch = this.epochOf(clusterKey);
+      void Promise.all(jobs).then(() => this.captureTopologySnapshot(clusterKey, epoch));
+    }
   }
 
   private ensureSectionValue<T>(
@@ -768,7 +983,7 @@ export class OciClusterStore {
 
   /**
    * pv-storageページのFSS/バックアップポリシー取得。
-   * ライブPV変化への自動追従はしない(既存の手動更新方針を踏襲): 新規FSSは次回のensureLoaded/refreshで拾う。
+   * force時はPVを読み直した上で新規参照も取得する(既存キャッシュとの和集合)。
    * `fs file-system list`はFileSystemSummaryでfilesystem-snapshot-policy-idを持たないためFSS本体はget維持。
    */
   private reconcileFileSystems(
@@ -779,8 +994,10 @@ export class OciClusterStore {
   ): Promise<OciResult<unknown>[]> {
     const epoch = this.epochOf(clusterKey);
     // 旧世代がreconciled=trueを書き戻すと、refreshで消したエントリが再要求されないまま完了扱いになる
-    const markReconciled = () => {
-      if (this.epochOf(clusterKey) === epoch) this.updateCache(clusterKey, { fileSystemsReconciled: true });
+    const markReconciled = (outcome: OciResult<unknown>) => {
+      if (this.epochOf(clusterKey) !== epoch) return;
+      this.updateCache(clusterKey, { fileSystemsReconciled: true });
+      this.recordReconcileOutcomes(clusterKey, epoch, [["fileSystems", outcome]]);
     };
     return (async () => {
       const jobs: Promise<OciResult<unknown>>[] = [];
@@ -797,10 +1014,24 @@ export class OciClusterStore {
           const csi = getCsiSource(pv.spec);
           return resolvePvStorage(csi?.driver, csi?.volumeHandle);
         });
+        const refOcids = distinctFssRefOcids(resolutions);
+        const beforeExports = this.getCache(clusterKey);
+        const exportRefs = refOcids.filter(isFssExportOcid);
+        const startedExports = new Set(beforeExports.fssExports.keys());
+        const exportsToStart = force
+          ? [...new Set([...startedExports, ...exportRefs])]
+          : unstartedOcids(exportRefs, startedExports);
+        const fssExports = exportsToStart.map((exportId) => this.ensureFssExport(clusterKey, exportId, force));
+        jobs.push(...fssExports);
+        // FileSystem OCIDはExport OCIDの解決結果からしか分からないため、本体getはexport完了後に始める。
+        await Promise.all(fssExports);
+
         const cache = this.getCache(clusterKey);
+        const resolvedFsOcids = fileSystemOcidsOf(refOcids, this.toRecord(cache.fssExports));
+        const startedFileSystems = new Set(cache.fileSystems.keys());
         const toStart = force
-          ? [...cache.fileSystems.keys()]
-          : newFileSystemOcids(distinctFileSystemOcids(resolutions), new Set(cache.fileSystems.keys()));
+          ? [...new Set([...startedFileSystems, ...resolvedFsOcids])]
+          : unstartedOcids(resolvedFsOcids, startedFileSystems);
         const fileSystems = toStart.map((fsId) => this.ensureFileSystem(clusterKey, fsId, force));
         jobs.push(...fileSystems);
 
@@ -820,10 +1051,11 @@ export class OciClusterStore {
         // スナップショットポリシーのMapエントリはFSS本体getの完了後に生える。
         // 先にreconciledを立てると、そのMapが空のまま「揃った」と誤判定してポリシー名が後から生える。
         await Promise.all(fssPolicyJobs);
-        markReconciled();
+        markReconciled({ ok: true, data: undefined });
       } catch (error) {
-        markReconciled();
-        jobs.push(Promise.resolve({ ok: false, kind: "internal", raw: { message: String(error) } }));
+        const failure: OciResult<unknown> = { ok: false, kind: "internal", raw: { message: String(error) } };
+        markReconciled(failure);
+        jobs.push(Promise.resolve(failure));
       }
       return Promise.all(jobs);
     })();
@@ -918,6 +1150,38 @@ export class OciClusterStore {
 
   private ensureFileSystem(clusterKey: string, fsId: string, force = false): Promise<OciResult<OciFileSystem>> {
     return this.ensureMapValue(clusterKey, "fileSystems", fsId, () => fetchFileSystem(fsId, this.ociCliCommand), force);
+  }
+
+  private ensureFssExport(clusterKey: string, exportId: string, force = false): Promise<OciResult<OciFssExport>> {
+    return this.ensureMapValue(
+      clusterKey,
+      "fssExports",
+      exportId,
+      () => fetchFssExport(exportId, this.ociCliCommand),
+      force,
+    );
+  }
+
+  private ensureVcn(clusterKey: string, vcnId: string, force = false): Promise<OciResult<OciVcn>> {
+    return this.ensureMapValue(clusterKey, "vcns", vcnId, () => fetchVcn(vcnId, this.ociCliCommand), force);
+  }
+
+  /**
+   * topologyページのVCN本体取得。列挙元はcluster応答の`vcn-id`のため、cluster失敗は
+   * このセクション自体の失敗として記録する(Mapが空になる理由が「VCN無し」と区別できなくなる)。
+   */
+  private reconcileVcns(clusterKey: string, clusterId: string, force = false): Promise<OciResult<unknown>[]> {
+    const epoch = this.epochOf(clusterKey);
+    return (async () => {
+      const cluster = await this.ensureCluster(clusterKey, clusterId, force);
+      const vcnId = cluster.ok ? cluster.data["vcn-id"] : undefined;
+      const results = vcnId ? [await this.ensureVcn(clusterKey, vcnId, force)] : [];
+      if (this.epochOf(clusterKey) === epoch) {
+        this.updateCache(clusterKey, { vcnsReconciled: true });
+        this.recordReconcileOutcomes(clusterKey, epoch, [["vcn", cluster]]);
+      }
+      return results;
+    })();
   }
 
   // per-OCID Map(fileSystemsと同じパターン)のensure共通化。
@@ -1066,7 +1330,13 @@ export class OciClusterStore {
       gateways: this.seedMapEntries(clusterKey, "gateways", gateways.ok ? gateways.data : [], epoch),
       // NSGはルールが別コマンドのため本体だけ手元に持ち、Mapへはrules listと合わせて書く。
       nsgs: new Map(nsgs.ok ? nsgs.data.map((nsg) => [nsg.id, nsg]) : []),
-      results: [subnets, routeTables, securityLists, nsgs, gateways],
+      results: new Map<VcnListSection, OciResult<unknown>>([
+        ["subnets", subnets],
+        ["routeTables", routeTables],
+        ["securityLists", securityLists],
+        ["nsgs", nsgs],
+        ["gateways", gateways],
+      ]),
     };
   }
 
@@ -1110,6 +1380,8 @@ export class OciClusterStore {
     if (existing) return existing;
     const promise = (async () => {
       const jobs: Promise<OciResult<unknown>>[] = [];
+      let listOutcomesRecorded = false;
+      let getsCompleted = false;
       try {
         // DNS突合(Ingress/Serviceのホスト名をこの端末のリゾルバで解決する)。
         // K8s照会を挟むためoci側の発火をブロックしない位置で並走させる。
@@ -1124,8 +1396,22 @@ export class OciClusterStore {
         const vcnJob = (async (): Promise<VcnNetwork> => {
           const [cluster, taggedResources] = await Promise.all([clusterJob, taggedJob]);
           const vcnId = cluster.ok ? cluster.data["vcn-id"] : undefined;
-          if (!vcnId) return EMPTY_VCN_NETWORK;
-          return this.fetchVcnNetwork(clusterKey, buildCompartmentIdSet(compartmentId, taggedResources), vcnId, epoch);
+          const network = vcnId
+            ? await this.fetchVcnNetwork(
+                clusterKey,
+                buildCompartmentIdSet(compartmentId, taggedResources),
+                vcnId,
+                epoch,
+              )
+            : EMPTY_VCN_NETWORK;
+          // VCNへ辿り着けなければ型別listは撃てていない。その成否はclusterの結果がそのまま表す。
+          this.recordReconcileOutcomes(
+            clusterKey,
+            epoch,
+            VCN_LIST_SECTIONS.map((section) => [section, network.results.get(section) ?? cluster] as const),
+          );
+          listOutcomesRecorded = true;
+          return network;
         })();
 
         const [cluster, taggedResources, nodePools, nlbs, lbs, wafs, vcn] = await Promise.all([
@@ -1138,7 +1424,7 @@ export class OciClusterStore {
           vcnJob,
           this.ensureServiceNamespaces(clusterKey),
         ]);
-        jobs.push(clusterJob, taggedJob, ...vcn.results.map((result) => Promise.resolve(result)));
+        jobs.push(clusterJob, taggedJob, ...[...vcn.results.values()].map((result) => Promise.resolve(result)));
 
         const deps = { cluster, nodePools, nlbs, lbs };
         // compartment内の無関係なLBのsubnet/NSGまで取得しない(クラスタ関連判定はUI表示と同じ基準)
@@ -1188,11 +1474,20 @@ export class OciClusterStore {
             if (policyId) jobs.push(this.ensureWafPolicy(clusterKey, policyId, force));
           }
         }
+        getsCompleted = true;
         // DNSはこの端末のリゾルバの観測でありポーリング自動停止の判定材料にはしない。
         await dnsWork;
       } catch (error) {
         // 途中で落ちても取得済みの分で表示を進める
-        jobs.push(Promise.resolve({ ok: false, kind: "internal", raw: { message: String(error) } }));
+        const failure: OciResult<unknown> = { ok: false, kind: "internal", raw: { message: String(error) } };
+        jobs.push(Promise.resolve(failure));
+        if (!listOutcomesRecorded || !getsCompleted) {
+          this.recordReconcileOutcomes(
+            clusterKey,
+            epoch,
+            VCN_LIST_SECTIONS.map((section) => [section, failure] as const),
+          );
+        }
       }
       if (this.epochOf(clusterKey) === epoch) this.updateCache(clusterKey, { networkReconciled: true });
       return Promise.all(jobs);

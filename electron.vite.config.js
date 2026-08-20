@@ -65,11 +65,17 @@ export default defineConfig({
   // Freelens の renderer process は Node.js モジュールを使えるため preload script として設定
   preload: {
     resolve: {
-      // MOCK=1時のみ、OCI取得層(ociClusterStore)をmock/oci-cluster-store.mock.tsに差し替える
+      // MOCK=1時のみ、OCI取得層(ociClusterStore)とK8s取得層(k8s-adapter)をmock/配下に差し替える
       // (README用スクリーンショット撮影専用。mock/はgitignore対象でsrc/は無変更)。
       alias:
         process.env.MOCK === "1"
-          ? [{ find: /^\.+\/store\/oci-cluster-store$/, replacement: resolve(__dirname, "mock/oci-cluster-store.mock.ts") }]
+          ? [
+              {
+                find: /^\.+\/store\/oci-cluster-store$/,
+                replacement: resolve(__dirname, "mock/oci-cluster-store.mock.ts"),
+              },
+              { find: /^\.+\/store\/k8s-adapter$/, replacement: resolve(__dirname, "mock/k8s-adapter.mock.ts") },
+            ]
           : [],
     },
     build: {

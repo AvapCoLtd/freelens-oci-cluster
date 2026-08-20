@@ -4,8 +4,13 @@ import type { ClusterOciData } from "../fetch/fetch";
 import type { OciConsoleResourceType } from "../match/console-url";
 import {
   distinctBlockVolumeOcids,
-  distinctFileSystemOcids,
+  distinctFssRefOcids,
+  fileSystemOcidOf,
+  fileSystemOcidsOf,
   getCsiSource,
+  isFssExportOcid,
+  isOrphanedPvStorage,
+  type PvStorageOrphanKind,
   type PvStorageResolution,
   resolvePvStorage,
 } from "../match/pv-storage";
@@ -31,7 +36,16 @@ interface StorageResolution {
   backupLabel: string;
   backupPolicyId?: string;
   backupConsoleType?: OciConsoleResourceType;
+  /** 参照先の実体がOCIに存在しないと確定したPV(残骸)。エラーではなく観測結果として出す */
+  orphaned?: true;
 }
+
+// OCIは権限不足と不在に同じ応答を返すため、不在と断定せず両方を読める文言にする。
+const ORPHAN_MESSAGE: Record<PvStorageOrphanKind, string> = {
+  volume: "Not found in OCI or not accessible (orphaned PV)",
+  filesystem: "Not found in OCI or not accessible (orphaned PV)",
+  export: "Export not found or not accessible (file system may still exist)",
+};
 
 // バックアップポリシー名の表示(未割当="None"は保護されていないボリュームの検出材料)。
 function backupPolicyLabel(policy: ClusterOciData["volumeBackupPolicies"][string] | undefined): string {
@@ -40,6 +54,16 @@ function backupPolicyLabel(policy: ClusterOciData["volumeBackupPolicies"][string
 }
 
 function resolveStorage(data: ClusterOciData, resolution: PvStorageResolution): StorageResolution {
+  const orphaned = isOrphanedPvStorage(resolution, data);
+  if (orphaned) {
+    return {
+      displayName: ORPHAN_MESSAGE[orphaned],
+      ocid: resolution.ocid,
+      kindLabel: resolution.kind === "block_volume" ? "Volume" : "FSS",
+      backupLabel: "-",
+      orphaned: true,
+    };
+  }
   if (resolution.kind === "block_volume" && resolution.ocid) {
     const ocid = resolution.ocid;
     const backup = data.volumeBackupPolicies[ocid];
@@ -70,8 +94,8 @@ function resolveStorage(data: ClusterOciData, resolution: PvStorageResolution): 
     };
   }
   if (resolution.kind === "file_system" && resolution.ocid) {
-    const ocid = resolution.ocid;
-    const fsResult = data.fileSystems[ocid];
+    const ocid = fileSystemOcidOf(resolution.ocid, data.fssExports);
+    const fsResult = ocid ? data.fileSystems[ocid] : undefined;
     if (!fsResult?.ok) {
       return { displayName: "-", kindLabel: "FSS", ocid, consoleType: "filesystem", backupLabel: "-" };
     }
@@ -112,7 +136,9 @@ const SORT_VALUE: Record<PvColumn, (row: PvRow) => string | number | undefined> 
 /** 一覧の各セルが埋まる材料(OCI側)が揃ったか。PV行はK8s由来なので行数自体は先に確定している。 */
 function storageCellsReady(data: ClusterOciData, resolutions: PvStorageResolution[]): boolean {
   if (!sectionsReady(data.volumes, data.taggedResources)) return false;
-  const fileSystemIds = distinctFileSystemOcids(resolutions);
+  const refOcids = distinctFssRefOcids(resolutions);
+  if (!entriesReady(data.fssExports, refOcids.filter(isFssExportOcid))) return false;
+  const fileSystemIds = fileSystemOcidsOf(refOcids, data.fssExports);
   if (!entriesReady(data.fileSystems, fileSystemIds)) return false;
   if (!entriesReady(data.volumeBackupPolicies, distinctBlockVolumeOcids(resolutions))) return false;
   const policyIds = fileSystemIds
@@ -211,7 +237,7 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
               );
             }
             return (
-              <tr key={row.key}>
+              <tr key={row.key} style={storage.orphaned ? UNMATCHED_ROW_STYLE : undefined}>
                 <td style={TD_STYLE}>{row.pvName}</td>
                 <td style={TD_STYLE}>{row.pvcLabel}</td>
                 <td style={TD_STYLE}>{storage.displayName}</td>

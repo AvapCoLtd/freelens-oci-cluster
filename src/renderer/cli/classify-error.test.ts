@@ -35,6 +35,7 @@ const ERROR_FILES = [
   "err-profile-not-found.json",
   "err-unknown-option.json",
   "err-unknown-subcommand.json",
+  "err-volume-not-found.json",
 ];
 
 describe("classifyOciExit(フィクスチャ)", () => {
@@ -72,6 +73,8 @@ describe("classifyOciExit(フィクスチャ)", () => {
     for (const file of [
       "err-not-authorized-or-not-found.json",
       "err-not-authorized-or-not-found-malformed-ocid.json",
+      // パージ済みBlock Volumeの`bv volume get`。孤立PV判定はこの分類を追撃の材料にする。
+      "err-volume-not-found.json",
     ]) {
       const { kind, raw } = classify(file);
       expect(kind).toBe("forbidden_or_not_found");

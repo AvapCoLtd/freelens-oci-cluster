@@ -78,6 +78,9 @@ const FIXTURE_DEFS: { file: string; def: OciCommandDef<never, unknown> }[] = [
   { file: "26-iam-availability-domain-list.json", def: ociCommands.availabilityDomainList },
   { file: "27-fs-filesystem-snapshot-policy-list.json", def: ociCommands.fssSnapshotPolicyList },
   { file: "28-bv-volume-backup-policy-list.json", def: ociCommands.volumeBackupPolicyList },
+  { file: "29-network-vcn-get.json", def: ociCommands.vcnGet },
+  { file: "30-fs-export-get.json", def: ociCommands.fssExportGet },
+  { file: "31-bv-volume-get.json", def: ociCommands.volumeGet },
 ];
 
 /** フィクスチャの`data`(collectionは要素配列)をそのまま取り出したもの。 */
@@ -197,6 +200,19 @@ describe("parseOciStdout(フィクスチャ)", () => {
     const { data } = parseFixture(ociCommands.fileSystemGet, "08-fs-file-system-get.json");
     expect(data["display-name"]).toBe("example-website-fss");
     expect(data["filesystem-snapshot-policy-id"]).toBe("ocid1.filesystemsnapshotpolicy.oc1.ap_tokyo_1.aaaaexample0001");
+  });
+
+  it("#30 fs export get", () => {
+    const { data } = parseFixture(ociCommands.fssExportGet, "30-fs-export-get.json");
+    expect(data["file-system-id"]).toBe("ocid1.filesystem.oc1.ap_tokyo_1.aaaaexample0002");
+  });
+
+  it("#31 bv volume get(応答モデルはlist要素と同一)", () => {
+    const { data } = parseFixture(ociCommands.volumeGet, "31-bv-volume-get.json");
+    const listed = parseFixture(ociCommands.volumeList, "07-bv-volume-list.json").data.find(
+      (volume) => volume.id === data.id,
+    );
+    expect(data).toEqual(listed);
   });
 
   it("#9 ce node-pool list", () => {

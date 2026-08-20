@@ -9,6 +9,12 @@ export type OciConsoleResourceType =
   | "security-list"
   | "nsg"
   | "route-table"
+  | "vcn"
+  | "internet-gateway"
+  | "nat-gateway"
+  | "service-gateway"
+  | "local-peering-gateway"
+  | "drg"
   | "waf"
   | "waf-policy"
   | "volume-backup-policy"
@@ -31,17 +37,32 @@ const DIRECT_CONSOLE_PATH: Record<Exclude<OciConsoleResourceType, VcnScopedType 
   "volume-backup-policy": "block-storage/backup-policies",
   // 実機確認済み(2026-07-17)
   "fss-snapshot-policy": "fss/snapshot-policies",
+  vcn: "networking/vcns",
+  // DRGだけはVCN配下でなくcompartment直属のリソース
+  drg: "networking/drgs",
 };
 
-type VcnScopedType = "subnet" | "security-list" | "nsg" | "route-table";
+type VcnScopedType =
+  | "subnet"
+  | "security-list"
+  | "nsg"
+  | "route-table"
+  | "internet-gateway"
+  | "nat-gateway"
+  | "service-gateway"
+  | "local-peering-gateway";
 
 // subnet/SL/RTはVCN配下のネストパス(実機確認済み 2026-07-17)。SLのみ末尾に/detailsが付く。
-// nsgは同構成の類推で未確認。
+// nsgとゲートウェイ4種は同構成の類推で未確認。
 const VCN_SCOPED_CONSOLE_PATH: Record<VcnScopedType, { segment: string; suffix: string }> = {
   subnet: { segment: "subnets", suffix: "" },
   "security-list": { segment: "security-lists", suffix: "/details" },
   "route-table": { segment: "route-tables", suffix: "" },
   nsg: { segment: "network-security-groups", suffix: "" },
+  "internet-gateway": { segment: "internet-gateways", suffix: "" },
+  "nat-gateway": { segment: "nat-gateways", suffix: "" },
+  "service-gateway": { segment: "service-gateways", suffix: "" },
+  "local-peering-gateway": { segment: "local-peering-gateways", suffix: "" },
 };
 
 function isVcnScoped(type: OciConsoleResourceType): type is VcnScopedType {
@@ -49,7 +70,8 @@ function isVcnScoped(type: OciConsoleResourceType): type is VcnScopedType {
 }
 
 /**
- * 親付きリソースはparentIdが必須: subnet/SL/RT/NSG=VCN OCID、waf=WAFポリシーOCID(実機確認済み 2026-07-17)。
+ * 親付きリソースはparentIdが必須: subnet/SL/RT/NSG/ゲートウェイ4種=VCN OCID、
+ * waf=WAFポリシーOCID(実機確認済み 2026-07-17)。
  * 呼び出し元はparentId未解決の間ボタンを出さないこと(親なしで組んだパスはコンソールが404にする)。
  */
 export function buildConsoleUrl(type: OciConsoleResourceType, ocid: string, region: string, parentId?: string): string {

@@ -1,0 +1,38 @@
+{
+  "data": {
+    "auto-tuned-vpus-per-gb": null,
+    "autotune-policies": [],
+    "availability-domain": "Abcd:AP-TOKYO-1-AD-1",
+    "block-volume-replicas": null,
+    "cluster-placement-group-id": null,
+    "compartment-id": "ocid1.compartment.oc1..aaaaexample0001",
+    "defined-tags": {
+      "Oracle-Tags": {
+        "CreatedBy": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001",
+        "CreatedOn": "2024-07-16T13:46:27.272Z"
+      }
+    },
+    "display-name": "csi-00000000-0000-4000-8000-000000000003",
+    "freeform-tags": {
+      "Cluster": "example-k8s-cluster"
+    },
+    "id": "ocid1.volume.oc1.ap-tokyo-1.aaaaexample0001",
+    "is-auto-tune-enabled": false,
+    "is-hydrated": true,
+    "is-reservations-enabled": false,
+    "kms-key-id": null,
+    "lifecycle-state": "AVAILABLE",
+    "size-in-gbs": 50,
+    "size-in-mbs": 51200,
+    "source-details": null,
+    "system-tags": {
+      "orcl-containerengine": {
+        "Cluster": "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001"
+      }
+    },
+    "time-created": "2024-07-16T13:46:27.283000+00:00",
+    "volume-group-id": null,
+    "vpus-per-gb": 10
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

@@ -16,6 +16,7 @@ const VOLUME_ID = "ocid1.volume.oc1.ap-tokyo-1.aaaaexample0001";
 const BACKUP_POLICY_ID = "ocid1.volumebackuppolicy.oc1..aaaaexample0001";
 const FSS_POLICY_ID = "ocid1.filesystemsnapshotpolicy.oc1.ap_tokyo_1.aaaaexample0001";
 const FILE_SYSTEM_ID = "ocid1.filesystem.oc1.ap_tokyo_1.aaaaexample0001";
+const FSS_EXPORT_ID = "ocid1.export.oc1.ap_tokyo_1.aaaaexample0001";
 const CERTIFICATE_ID = "ocid1.certificate.oc1.ap-tokyo-1.aaaaexample0001";
 const NAT_GATEWAY_ID = "ocid1.natgateway.oc1.ap-tokyo-1.aaaaexample0001";
 const INTERNET_GATEWAY_ID = "ocid1.internetgateway.oc1.ap-tokyo-1.aaaaexample0001";
@@ -26,7 +27,7 @@ const LB_ID = "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const NLB_ID = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const QUERY_TEXT = `query all resources where (definedTags.namespace = 'Oracle-Tags' && definedTags.key = 'CreatedBy' && definedTags.value = '${CLUSTER_ID}')`;
 
-/** フィクスチャREADMEの対応表(全40コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
+/** フィクスチャREADMEの対応表(全43コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
 const CASES: { id: string; key: OciCommandName; actual: string[]; expected: string[] }[] = [
   {
     id: "1a",
@@ -303,6 +304,24 @@ const CASES: { id: string; key: OciCommandName; actual: string[]; expected: stri
     actual: ociCommands.volumeBackupPolicyList.args({ compartmentId: COMPARTMENT_ID }),
     expected: ["bv", "volume-backup-policy", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
   },
+  {
+    id: "29",
+    key: "vcnGet",
+    actual: ociCommands.vcnGet.args({ vcnId: VCN_ID }),
+    expected: ["network", "vcn", "get", "--vcn-id", VCN_ID],
+  },
+  {
+    id: "30",
+    key: "fssExportGet",
+    actual: ociCommands.fssExportGet.args({ exportId: FSS_EXPORT_ID }),
+    expected: ["fs", "export", "get", "--export-id", FSS_EXPORT_ID],
+  },
+  {
+    id: "31",
+    key: "volumeGet",
+    actual: ociCommands.volumeGet.args({ volumeId: VOLUME_ID }),
+    expected: ["bv", "volume", "get", "--volume-id", VOLUME_ID],
+  },
 ];
 
 describe("ociCommands", () => {
@@ -310,10 +329,10 @@ describe("ociCommands", () => {
     expect(actual).toEqual(expected);
   });
 
-  it("定義表はSDK呼び出し全40件を網羅し、余分な定義を持たない", () => {
-    expect(CASES).toHaveLength(40);
+  it("定義表はSDK呼び出し全43件を網羅し、余分な定義を持たない", () => {
+    expect(CASES).toHaveLength(43);
     expect(new Set(CASES.map((testCase) => testCase.key))).toEqual(new Set(Object.keys(ociCommands)));
-    expect(Object.keys(ociCommands)).toHaveLength(40);
+    expect(Object.keys(ociCommands)).toHaveLength(43);
   });
 
   it("手動ページングはsearchのみ(他はCLI側の--allで全件取得)", () => {

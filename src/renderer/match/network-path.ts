@@ -129,8 +129,15 @@ export function internalIpsOfNodes(
   return [...ips];
 }
 
-interface BackendSetsLike {
+export interface BackendSetsLike {
   [name: string]: { backends?: { "ip-address"?: string }[] } | undefined;
+}
+
+/** LB/NLBの全バックエンドセットのバックエンドIP(重複はそのまま)。 */
+export function backendIpsOf(backendSets: BackendSetsLike | undefined): string[] {
+  return Object.values(backendSets ?? {}).flatMap((set) =>
+    (set?.backends ?? []).map((backend) => backend["ip-address"]).filter((ip): ip is string => !!ip),
+  );
 }
 
 interface LbEntry {
@@ -147,9 +154,7 @@ function toLbEntry(
   return {
     id,
     ips: (ips ?? []).map((ip) => ip?.["ip-address"]).filter((ip): ip is string => !!ip),
-    backendIps: Object.values(backendSets ?? {}).flatMap((set) =>
-      (set?.backends ?? []).map((backend) => backend["ip-address"]).filter((ip): ip is string => !!ip),
-    ),
+    backendIps: backendIpsOf(backendSets),
   };
 }
 

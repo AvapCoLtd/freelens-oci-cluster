@@ -1,6 +1,7 @@
 import { Renderer } from "@freelensapp/extensions";
 import * as React from "react";
 import type { OciPage } from "../match/page-sections";
+import { subscribeTopologyK8s } from "../store/k8s-adapter";
 import { ociClusterStore } from "../store/oci-cluster-store";
 
 // ページが表示のため直接購読するstoreのみ登録する。ociClusterStore側のアンカー解決(nodesStore.loadAll())は
@@ -16,6 +17,8 @@ function subscribeTargetsForPage(page: OciPage): Array<{ subscribe: () => () => 
     case "network":
       // クラスタ関連LB判定(経路2)のService ingress IPと、DNS突合のIngressホスト名を読むため両方購読する
       return [Renderer.K8sApi.serviceStore, Renderer.K8sApi.ingressStore];
+    case "topology":
+      return [{ subscribe: subscribeTopologyK8s }];
   }
 }
 

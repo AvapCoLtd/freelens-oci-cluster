@@ -31,6 +31,8 @@ function loadedState(data: Partial<ClusterOciData>): OciClusterViewState {
       nodePools: NOT_REQUESTED,
       wafs: NOT_REQUESTED,
       fileSystems: {},
+      fssExports: {},
+      vcns: {},
       subnets: {},
       securityLists: {},
       routeTables: {},

@@ -77,6 +77,35 @@ describe("buildConsoleUrl", () => {
     );
   });
 
+  it("builds a VCN URL (未確認・実機遷移確認の対象)", () => {
+    expect(buildConsoleUrl("vcn", VCN, "ap-tokyo-1")).toBe(
+      `https://cloud.oracle.com/networking/vcns/${VCN}?region=ap-tokyo-1`,
+    );
+  });
+
+  it("builds gateway URLs nested under the VCN (未確認・実機遷移確認の対象)", () => {
+    expect(buildConsoleUrl("internet-gateway", "ocid1.internetgateway.oc1.ap-tokyo-1.aaaa", "ap-tokyo-1", VCN)).toBe(
+      `https://cloud.oracle.com/networking/vcns/${VCN}/internet-gateways/ocid1.internetgateway.oc1.ap-tokyo-1.aaaa?region=ap-tokyo-1`,
+    );
+    expect(buildConsoleUrl("nat-gateway", "ocid1.natgateway.oc1.ap-tokyo-1.aaaa", "ap-tokyo-1", VCN)).toBe(
+      `https://cloud.oracle.com/networking/vcns/${VCN}/nat-gateways/ocid1.natgateway.oc1.ap-tokyo-1.aaaa?region=ap-tokyo-1`,
+    );
+    expect(buildConsoleUrl("service-gateway", "ocid1.servicegateway.oc1.ap-tokyo-1.aaaa", "ap-tokyo-1", VCN)).toBe(
+      `https://cloud.oracle.com/networking/vcns/${VCN}/service-gateways/ocid1.servicegateway.oc1.ap-tokyo-1.aaaa?region=ap-tokyo-1`,
+    );
+    expect(
+      buildConsoleUrl("local-peering-gateway", "ocid1.localpeeringgateway.oc1.ap-tokyo-1.aaaa", "ap-tokyo-1", VCN),
+    ).toBe(
+      `https://cloud.oracle.com/networking/vcns/${VCN}/local-peering-gateways/ocid1.localpeeringgateway.oc1.ap-tokyo-1.aaaa?region=ap-tokyo-1`,
+    );
+  });
+
+  it("builds a DRG URL outside the VCN scope (未確認・実機遷移確認の対象)", () => {
+    expect(buildConsoleUrl("drg", "ocid1.drg.oc1.ap-tokyo-1.aaaa", "ap-tokyo-1", VCN)).toBe(
+      "https://cloud.oracle.com/networking/drgs/ocid1.drg.oc1.ap-tokyo-1.aaaa?region=ap-tokyo-1",
+    );
+  });
+
   it("builds a WAF policy URL (WAF本体URLの親ページ形・単体遷移は未確認)", () => {
     expect(buildConsoleUrl("waf-policy", "ocid1.webappfirewallpolicy.oc1.ap-tokyo-1.pppp", "ap-tokyo-1")).toBe(
       "https://cloud.oracle.com/waf/policies/ocid1.webappfirewallpolicy.oc1.ap-tokyo-1.pppp?region=ap-tokyo-1",
@@ -108,6 +137,12 @@ describe("buildConsoleUrl", () => {
       "security-list",
       "nsg",
       "route-table",
+      "vcn",
+      "internet-gateway",
+      "nat-gateway",
+      "service-gateway",
+      "local-peering-gateway",
+      "drg",
       "waf",
     ];
     for (const type of types) {

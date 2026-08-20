@@ -14,6 +14,7 @@ import type {
   OciDrg,
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
+  OciFssExport,
   OciInstance,
   OciInternetGateway,
   OciLoadBalancer,
@@ -27,6 +28,7 @@ import type {
   OciRouteTable,
   OciSecurityList,
   OciSubnet,
+  OciVcn,
   OciVolume,
   OciVolumeBackupPolicy,
   OciWafPolicy,
@@ -41,9 +43,12 @@ export interface ClusterOciData {
   lbs: OciResult<OciLoadBalancer[]>;
   volumes: OciResult<OciVolume[]>;
   fileSystems: Record<string, OciResult<OciFileSystem>>;
+  /** Export OCID→FSS export。volumeHandleがExport OCIDのPVでFileSystem OCIDを解決する段 */
+  fssExports: Record<string, OciResult<OciFssExport>>;
   nodePools: OciResult<OciNodePoolSummary[]>;
   wafs: OciResult<OciWafSummary[]>;
   // per-OCID遅延取得のRecord: エントリ不在=取得中(UI側は「取得中」表示に落とす)。
+  vcns: Record<string, OciResult<OciVcn>>;
   subnets: Record<string, OciResult<OciSubnet>>;
   securityLists: Record<string, OciResult<OciSecurityList>>;
   routeTables: Record<string, OciResult<OciRouteTable>>;
@@ -77,6 +82,17 @@ async function toSectionResult<T>(promise: Promise<OciResult<T>>): Promise<OciRe
   } catch (error) {
     return { ok: false, kind: "internal", raw: { message: String(error) } };
   }
+}
+
+/**
+ * リソース自身のgetの結果を、実体なし(resource_not_found)を切り出した形へ寄せる。
+ * OCIは権限不足も不在も404 NotAuthorizedOrNotFoundで返すが、そのリソース自身のgetがこれを
+ * 返した以上これ以上確からしい存在確認は無いため、残骸(孤立PV)側に倒す。
+ */
+async function toResourceResult<T>(promise: Promise<OciResult<T>>): Promise<OciResult<T>> {
+  const result = await promise;
+  if (result.ok || result.kind !== "forbidden_or_not_found") return result;
+  return { ok: false, kind: "resource_not_found", raw: result.raw };
 }
 
 /** 複数スコープのlist結果をidで重複排除して結合する。1つでも失敗すればセクション全体を失敗として返す。 */
@@ -174,7 +190,12 @@ export function fetchVolumes(compartmentIds: string[], ociCliCommand: string): P
 
 // #8 FSS名前解決(pv-storageページ、distinct FileSystem OCIDごとに1回)。
 export function fetchFileSystem(fsId: string, ociCliCommand: string): Promise<OciResult<OciFileSystem>> {
-  return toSectionResult(run(ociCommands.fileSystemGet, { fileSystemId: fsId }, ociCliCommand));
+  return toSectionResult(toResourceResult(run(ociCommands.fileSystemGet, { fileSystemId: fsId }, ociCliCommand)));
+}
+
+// #30 FSS export(pv-storageページ、volumeHandleがExport OCIDのPVのみ)。#8へ渡すFileSystem OCIDを得る。
+export function fetchFssExport(exportId: string, ociCliCommand: string): Promise<OciResult<OciFssExport>> {
+  return toSectionResult(toResourceResult(run(ociCommands.fssExportGet, { exportId }, ociCliCommand)));
 }
 
 // #9 ノードプール一覧(nodes/networkページ)。
@@ -194,6 +215,11 @@ export function fetchWafs(compartmentIds: string[], ociCliCommand: string): Prom
       compartmentIds,
     ),
   );
+}
+
+// #29 VCN本体(topologyページ、コンテナラベルの名前+CIDR)。OCID直指定のためcompartment前提なし。
+export function fetchVcn(vcnId: string, ociCliCommand: string): Promise<OciResult<OciVcn>> {
+  return toSectionResult(run(ociCommands.vcnGet, { vcnId }, ociCliCommand));
 }
 
 // #11 サブネット詳細(networkページ、関連subnet OCIDごとに1回)。OCID直指定のためcompartment前提なし。
@@ -383,7 +409,14 @@ export function fetchVolumeBackupPolicyName(
   return toSectionResult(
     (async (): Promise<OciResult<OciBackupPolicyView>> => {
       const assignments = await run(ociCommands.volumeBackupPolicyAssignmentGet, { assetId: volumeId }, ociCliCommand);
-      if (!assignments.ok) return assignments;
+      if (!assignments.ok) {
+        // #31 割当照会はVolume自身のgetではないため、404の理由(権限不足かVolume消滅か)をVolume getで確かめる。
+        // 追撃は失敗時だけで、正常系の呼び出し数は増えない。
+        if (assignments.kind !== "forbidden_or_not_found") return assignments;
+        const volume = await toResourceResult(run(ociCommands.volumeGet, { volumeId }, ociCliCommand));
+        if (!volume.ok && volume.kind === "resource_not_found") return volume;
+        return assignments;
+      }
       const policyId = assignments.data[0]?.["policy-id"];
       if (!policyId) return { ok: true, data: { policyName: undefined } };
       if (knownPolicyNames?.has(policyId)) {

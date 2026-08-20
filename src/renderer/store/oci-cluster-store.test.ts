@@ -3,13 +3,19 @@ import { resolveAnchor } from "../fetch/anchor";
 import * as fetchModule from "../fetch/fetch";
 import {
   fetchCluster,
+  fetchFileSystem,
+  fetchFssExport,
   fetchInstances,
   fetchNsgWithRules,
   fetchSubnet,
+  fetchVcn,
+  fetchVcnGateways,
   fetchVcnNsgs,
+  fetchVcnRouteTables,
   fetchVcnSubnets,
 } from "../fetch/fetch";
-import { OciClusterStore } from "./oci-cluster-store";
+import type { TopologySection } from "../match/page-sections";
+import { OciClusterStore, type TopologySectionStatus } from "./oci-cluster-store";
 
 // @freelensapp/extensionsの実体はFreeLens本体のrendererバンドルで、node環境のimportで例外を出す。
 const k8s = vi.hoisted(() => ({
@@ -53,8 +59,13 @@ const fetchInstancesMock = fetchInstances as unknown as Mock;
 const fetchClusterMock = fetchCluster as unknown as Mock;
 const fetchSubnetMock = fetchSubnet as unknown as Mock;
 const fetchVcnSubnetsMock = fetchVcnSubnets as unknown as Mock;
+const fetchVcnRouteTablesMock = fetchVcnRouteTables as unknown as Mock;
+const fetchVcnGatewaysMock = fetchVcnGateways as unknown as Mock;
 const fetchVcnNsgsMock = fetchVcnNsgs as unknown as Mock;
 const fetchNsgWithRulesMock = fetchNsgWithRules as unknown as Mock;
+const fetchVcnMock = fetchVcn as unknown as Mock;
+const fetchFileSystemMock = fetchFileSystem as unknown as Mock;
+const fetchFssExportMock = fetchFssExport as unknown as Mock;
 
 /** 保留中のfetchを1件ずつ解決するためのキュー。 */
 function pendingQueue(mock: Mock): ((result: unknown) => void)[] {
@@ -83,6 +94,65 @@ beforeEach(() => {
   }
   resolveAnchorMock.mockReset().mockResolvedValue(ANCHOR);
   k8s.persistentVolumeStore.loadAll = () => Promise.resolve();
+  k8s.persistentVolumeStore.items = [];
+});
+
+describe("pv-storageのFSS解決", () => {
+  const EXPORT_ID = "ocid1.export.oc1.ap_tokyo_1.aaaaexport1";
+  const FILE_SYSTEM_ID = "ocid1.filesystem.oc1.ap_tokyo_1.aaaafs1";
+  const FILE_SYSTEM = { ok: true, data: { "display-name": "fss-home" } };
+  const EXPORT_DENIED = { ok: false, kind: "forbidden_or_not_found", raw: { message: "denied" } };
+
+  function setUpFssPv(volumeHandle: string): void {
+    k8s.persistentVolumeStore.items = [{ spec: { csi: { driver: "fss.csi.oraclecloud.com", volumeHandle } } }];
+  }
+
+  it("volumeHandleがExport OCIDならexport応答のfile-system-idでFileSystemを取得する", async () => {
+    const store = new OciClusterStore();
+    setUpFssPv(`${EXPORT_ID}:10.0.0.5:/staging`);
+    fetchFssExportMock.mockResolvedValue({ ok: true, data: { "file-system-id": FILE_SYSTEM_ID } });
+    fetchFileSystemMock.mockResolvedValue(FILE_SYSTEM);
+
+    store.ensureLoaded(CLUSTER_KEY, "pv-storage");
+    await settle();
+
+    expect(fetchFssExportMock.mock.calls.map((call) => call[0])).toEqual([EXPORT_ID]);
+    expect(fetchFileSystemMock.mock.calls.map((call) => call[0])).toEqual([FILE_SYSTEM_ID]);
+    const state = store.getState(CLUSTER_KEY, "pv-storage");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.data.fssExports[EXPORT_ID]).toEqual({ ok: true, data: { "file-system-id": FILE_SYSTEM_ID } });
+    expect(state.data.fileSystems[FILE_SYSTEM_ID]).toEqual(FILE_SYSTEM);
+  });
+
+  it("volumeHandleがFileSystem OCIDならexport getを叩かない", async () => {
+    const store = new OciClusterStore();
+    setUpFssPv(`${FILE_SYSTEM_ID}:10.0.0.5:/staging`);
+    fetchFileSystemMock.mockResolvedValue(FILE_SYSTEM);
+
+    store.ensureLoaded(CLUSTER_KEY, "pv-storage");
+    await settle();
+
+    expect(fetchFssExportMock).not.toHaveBeenCalled();
+    expect(fetchFileSystemMock.mock.calls.map((call) => call[0])).toEqual([FILE_SYSTEM_ID]);
+  });
+
+  it("export取得の失敗はFileSystem本体getへ進まずfssExportsの失敗として残り、セクションは確定する", async () => {
+    const store = new OciClusterStore();
+    setUpFssPv(`${EXPORT_ID}:10.0.0.5:/staging`);
+    fetchFssExportMock.mockResolvedValue(EXPORT_DENIED);
+
+    store.ensureLoaded(CLUSTER_KEY, "pv-storage");
+    await settle();
+
+    expect(fetchFileSystemMock).not.toHaveBeenCalled();
+    expect(settled(store, "pv-storage")).toBe(true);
+    const state = store.getState(CLUSTER_KEY, "pv-storage");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.data.fssExports[EXPORT_ID]).toEqual(EXPORT_DENIED);
+    expect(state.data.fileSystems).toEqual({});
+  });
 });
 
 describe("OciClusterStore 取得世代", () => {
@@ -288,5 +358,222 @@ describe("一覧セクションの確定", () => {
     expect(state.status).toBe("loaded");
     if (state.status !== "loaded") return;
     expect(state.data.subnets[ENDPOINT_SUBNET_ID]).toMatchObject({ ok: false, kind: "forbidden_or_not_found" });
+  });
+});
+
+const DENIED = { ok: false as const, kind: "forbidden_or_not_found" as const, raw: { message: "denied" } };
+const RESOURCE_NOT_FOUND = { ok: false as const, kind: "resource_not_found" as const, raw: { message: "gone" } };
+const ORPHAN_FILE_SYSTEM_ID = "ocid1.filesystem.oc1.ap_tokyo_1.aaaaorphan1";
+
+/** endpoint subnetを持たない最小構成のOKEクラスタ(topologyの取得起点はvcn-idのみ)。 */
+function setUpTopologyCluster(): void {
+  fetchClusterMock.mockResolvedValue({ ok: true, data: { id: ANCHOR.clusterId, "vcn-id": VCN_ID } });
+}
+
+function progressOf(store: OciClusterStore): Record<TopologySection, TopologySectionStatus> {
+  const entries = store.getTopologyProgress(CLUSTER_KEY).map((entry) => [entry.section, entry.status]);
+  return Object.fromEntries(entries) as Record<TopologySection, TopologySectionStatus>;
+}
+
+describe("topologyページのvcnセクション", () => {
+  it("cluster応答のvcn-idを起点にVCN本体を取得し、vcnsへ載せる", async () => {
+    setUpTopologyCluster();
+    const vcn = { id: VCN_ID, "display-name": "vcn-1", "cidr-block": "10.0.0.0/16" };
+    fetchVcnMock.mockResolvedValue({ ok: true, data: vcn });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVcnMock).toHaveBeenCalledWith(VCN_ID, "");
+    const state = store.getState(CLUSTER_KEY, "topology");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.settled).toBe(true);
+    expect(state.data.vcns[VCN_ID]).toEqual({ ok: true, data: vcn });
+    expect(progressOf(store).vcn).toBe("ok");
+  });
+
+  it("VCN取得が失敗しても確定扱いになり、失敗結果としてvcnsへ載る", async () => {
+    setUpTopologyCluster();
+    fetchVcnMock.mockResolvedValue(DENIED);
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(settled(store, "topology")).toBe(true);
+    expect(progressOf(store).vcn).toBe("failed");
+    const state = store.getState(CLUSTER_KEY, "topology");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.data.vcns[VCN_ID]).toMatchObject({ ok: false, kind: "forbidden_or_not_found" });
+  });
+
+  it("cluster取得の失敗はvcnセクションの失敗として観測できる", async () => {
+    fetchClusterMock.mockResolvedValue(DENIED);
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVcnMock).not.toHaveBeenCalled();
+    expect(progressOf(store).vcn).toBe("failed");
+  });
+});
+
+describe("topologyのセクション進行状態", () => {
+  it("必要セクション集合を列挙し、未着手はloadingで返る", () => {
+    const store = new OciClusterStore();
+
+    expect(store.getTopologyProgress(CLUSTER_KEY)).toEqual(
+      [
+        "cluster",
+        "taggedResources",
+        "instances",
+        "nodePools",
+        "lbs",
+        "nlbs",
+        "wafs",
+        "volumes",
+        "volumeBackupPolicies",
+        "fileSystems",
+        "fssSnapshotPolicies",
+        "vcn",
+        "subnets",
+        "routeTables",
+        "securityLists",
+        "nsgs",
+        "gateways",
+        "managedCerts",
+        "dnsChecks",
+      ].map((section) => ({ section, status: "loading" })),
+    );
+  });
+
+  it("取得中のセクションだけがloadingで残る", async () => {
+    setUpTopologyCluster();
+    pendingQueue(fetchInstancesMock);
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    const progress = progressOf(store);
+    expect(progress.instances).toBe("loading");
+    expect(progress.cluster).toBe("ok");
+    expect(progress.subnets).toBe("ok");
+  });
+
+  it("型別listの失敗はセクションのfailedとして観測でき、空listのokと区別できる", async () => {
+    setUpTopologyCluster();
+    fetchVcnSubnetsMock.mockResolvedValue(DENIED);
+    fetchVcnGatewaysMock.mockResolvedValue(DENIED);
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    const progress = progressOf(store);
+    // どちらもMapは空。listの成否を持たなければ「対象なし」と見分けが付かない。
+    expect(progress.subnets).toBe("failed");
+    expect(progress.gateways).toBe("failed");
+    expect(progress.routeTables).toBe("ok");
+    expect(fetchVcnRouteTablesMock).toHaveBeenCalled();
+  });
+
+  it("参照先の実体なし(孤立PV)はセクションのfailedにしない", async () => {
+    setUpTopologyCluster();
+    k8s.persistentVolumeStore.items = [
+      { spec: { csi: { driver: "fss.csi.oraclecloud.com", volumeHandle: `${ORPHAN_FILE_SYSTEM_ID}:10.0.0.5:/x` } } },
+    ];
+    fetchFileSystemMock.mockResolvedValue(RESOURCE_NOT_FOUND);
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    const progress = progressOf(store);
+    expect(progress.fileSystems).toBe("ok");
+    const state = store.getState(CLUSTER_KEY, "topology");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.data.fileSystems[ORPHAN_FILE_SYSTEM_ID]).toEqual(RESOURCE_NOT_FOUND);
+  });
+});
+
+describe("topologyの確定スナップショット", () => {
+  it("全必要セクション確定まで現れず、確定時に世代1で現れる", async () => {
+    setUpTopologyCluster();
+    const instances = pendingQueue(fetchInstancesMock);
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(store.getTopologySnapshot(CLUSTER_KEY)).toBeUndefined();
+
+    instances[0]?.({ ok: true, data: [{ id: "i-1" }] });
+    await settle();
+
+    const snapshot = store.getTopologySnapshot(CLUSTER_KEY);
+    expect(snapshot?.generation).toBe(1);
+    expect(snapshot?.data.instances).toEqual({ ok: true, data: [{ id: "i-1" }] });
+  });
+
+  it("force更新中は直前の世代を返し続け、確定後に一度だけ世代が進む", async () => {
+    setUpTopologyCluster();
+    fetchInstancesMock.mockResolvedValue({ ok: true, data: [{ id: "old" }] });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+
+    const instances = pendingQueue(fetchInstancesMock);
+    const poll = store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+    // 取得中に差し替えると新旧混在の図になる
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.data.instances).toEqual({ ok: true, data: [{ id: "old" }] });
+
+    instances[0]?.({ ok: true, data: [{ id: "new" }] });
+    await poll;
+
+    const snapshot = store.getTopologySnapshot(CLUSTER_KEY);
+    expect(snapshot?.generation).toBe(2);
+    expect(snapshot?.data.instances).toEqual({ ok: true, data: [{ id: "new" }] });
+  });
+
+  it("内容が変わらない再確定では世代を進めない", async () => {
+    setUpTopologyCluster();
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+  });
+
+  it("refreshはスナップショットを捨て、採番は戻さない", async () => {
+    setUpTopologyCluster();
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+
+    const instances = pendingQueue(fetchInstancesMock);
+    store.refresh(CLUSTER_KEY, "topology");
+    await settle();
+    expect(store.getTopologySnapshot(CLUSTER_KEY)).toBeUndefined();
+
+    instances[0]?.({ ok: true, data: [{ id: "i-1" }] });
+    await settle();
+
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(2);
   });
 });

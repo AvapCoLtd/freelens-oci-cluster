@@ -5,8 +5,11 @@
 拡張のレスポンス型（[oci/types.ts](../../oci/types.ts)）はこのフィクスチャを正として書かれており、
 各インターフェースのコメントが対応ファイルを指す。フィールドを増やすときはここで実在キーを確認する。
 
-- 採取日: 2026-07-30(#1〜#20)、2026-08-04(#21〜#28 の list 系)
+- 採取日: 2026-07-30(#1〜#20)、2026-08-04(#21〜#28 の list 系)、2026-08-20(#29〜#31)
 - 採取環境: `oci` CLI 3.90.0(Oracle-PythonSDK/2.183.0)、region `ap-tokyo-1`、OKE 1.31 クラスタ
+  (#29 のみ同テナンシの別 VCN。OKE クラスタ配下でないため VCN 単体の応答形だけを採っている。
+  #30 は同テナンシの FSS export。#31 と `err-volume-not-found.json` のみ `oci` CLI 3.90.3
+  (Oracle-PythonSDK/2.184.2)で採取)
 - 全コマンドに `--output json` を付与。list 系は `--all`、`search resource structured-search` のみ手動ページング
 - 実行はすべて読み取り操作(get / list / search)
 
@@ -67,6 +70,7 @@
 | `bv volume-backup-policy` | get と完全一致(`schedules` も持つ) | list へ置換 |
 | `fs filesystem-snapshot-policy` | Summary。`schedules` が無く `policy-prefix` の値も get と異なる。表示に使う `display-name` は持つ | list へ置換 |
 | `fs file-system` | Summary。**`filesystem-snapshot-policy-id` が無い**(ポリシー割当済みの FS でも出ない) | get 維持 |
+| `bv volume` | get と**キー集合も値も完全一致**(get は `etag` を伴う) | list 維持。get は存在確認専用(#31) |
 
 `network drg list` に `--vcn-id` は無い(compartment 単位)。
 `fs` 系 list は `--compartment-id` と `--availability-domain` の両方が必須。
@@ -95,7 +99,7 @@
 - 対話プロンプト(`Do you want to create a new config file? [Y/n]:`)が出る経路があるため、
   子プロセスの stdin は必ず閉じる(`/dev/null`)。閉じていれば EOF で `Abort:` して即終了する
 
-## コマンド → ファイル対応(全 40 コマンド)
+## コマンド → ファイル対応(全 43 コマンド)
 
 `#` は [fetch.ts](../../fetch/fetch.ts) / [anchor.ts](../../fetch/anchor.ts) のコメント番号。
 OCID は下記サニタイズ済みのダミー値で表記している。
@@ -147,6 +151,9 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 | 26 | `iam availability-domain list --compartment-id … --all` | `stdout/26-iam-availability-domain-list.json` | 0 |
 | 27 | `fs filesystem-snapshot-policy list --compartment-id … --availability-domain … --all` | `stdout/27-fs-filesystem-snapshot-policy-list.json` | 0 |
 | 28 | `bv volume-backup-policy list --all`(compartment 無指定) | `stdout/28-bv-volume-backup-policy-list.json` | 0 |
+| 29 | `network vcn get --vcn-id …` | `stdout/29-network-vcn-get.json` | 0 |
+| 30 | `fs export get --export-id …` | `stdout/30-fs-export-get.json` | 0 |
+| 31 | `bv volume get --volume-id …` | `stdout/31-bv-volume-get.json` | 0 |
 
 ## エラー・警告フィクスチャ
 
@@ -155,6 +162,7 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 | `outcome/warn-list-without-all-paginated.json` | `compute instance list --compartment-id … --limit 2`(`--all` なし) | 0 |
 | `outcome/err-not-authorized-or-not-found.json` | 削除済みインスタンスの OCID で `compute instance get` | 1 |
 | `outcome/err-not-authorized-or-not-found-malformed-ocid.json` | `compute instance get --instance-id not-an-ocid` | 1 |
+| `outcome/err-volume-not-found.json` | パージ済み Block Volume の OCID で `bv volume get`(孤立 PV 判定の追撃が読む応答) | 1 |
 | `outcome/err-cannot-parse-request.json` | `search resource structured-search --query-text "query cluster resources"`(不正な resource type) | 1 |
 | `outcome/err-not-authenticated.json` | 実在しない user/tenancy と自己生成の使い捨て鍵を書いた config で `compute instance list` | 1 |
 | `outcome/err-config-file-missing.json` | 存在しない `OCI_CLI_CONFIG_FILE` を指定 | 1 |
@@ -182,9 +190,10 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 
 | 種類 | 置換規則 | 件数 |
 |---|---|---|
-| OCID | `ocid1.<type>.<realm>.<region>.` を保ったまま unique 部を `aaaaexample<NNNN>` に。同一 OCID は同一ダミーへ一貫置換。type/realm/region セグメントは無変換(FSS の `ap_tokyo_1` 表記も維持) | 70 |
+| OCID | `ocid1.<type>.<realm>.<region>.` を保ったまま unique 部を `aaaaexample<NNNN>` に。同一 OCID は同一ダミーへ一貫置換。type/realm/region セグメントは無変換(FSS の `ap_tokyo_1` 表記も維持) | 71 |
 | UUID | `00000000-0000-4000-8000-<連番>` へ一貫置換 | 9 |
 | IPv4 | private: `10.x.y.z`→`10.0.y.z` / `192.168.y.z`→`10.9.y.z` / `172.16-31.y.z`→`10.8.y.z`(CIDR の包含関係は保存)。public: `203.0.113.<n>`。`0.0.0.0` `255.255.255.255` `127.0.0.1` `169.254.169.254` は無変換 | 67(うち public 41) |
+| IPv6 | RFC 3849 のドキュメント用プレフィクス `2001:db8::/32` 配下へ。プレフィクス長は維持 | 1 |
 | 表示名・ホスト名・メールアドレス | テナンシ名・顧客名・人名・ドメインを汎用名へ(`example` / `client-a` / `app-a` / `example.com` 等)。命名の形は維持 | 全件 |
 | MAC アドレス | `00:00:17:00:00:01` | 全件 |
 | availability domain | プレフィクスを `Abcd:` に(`Abcd:AP-TOKYO-1-AD-1`) | 全件 |

@@ -34,6 +34,8 @@ function baseData(overrides: Partial<ClusterOciData>): ClusterOciData {
     lbs: NOT_REQUESTED,
     volumes: NOT_REQUESTED,
     fileSystems: {},
+    fssExports: {},
+    vcns: {},
     nodePools: NOT_REQUESTED,
     wafs: NOT_REQUESTED,
     subnets: {},

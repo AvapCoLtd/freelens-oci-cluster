@@ -48,7 +48,7 @@ Verified on FreeLens 1.10.3 (Extension API 1.10.3, Windows x64).
 1. Deploy the extension and connect to a cluster in FreeLens
 2. Click the "OCI" menu in the cluster sidebar
 3. For OKE clusters, a header shows cluster info.
-   The sub-menus under "OCI" (Nodes / Service↔LB / PV↔Storage / Network) switch between resource pages.
+   The sub-menus under "OCI" (Nodes / Service↔LB / PV↔Storage / Network / Topology) switch between resource pages.
    For non-OKE clusters, an out-of-scope guidance message is shown instead.
 
 Main features per page.
@@ -59,6 +59,8 @@ Main features per page.
   Expanding a row shows security rules, WAF policies, certificate expiry, routes (whether the gateway on the path is alive),
   and backend health (detecting unhealthy backends)
 - **PV↔Storage**: the mapping to Block Volume / FSS and the backup (snapshot) policies
+- **Topology**: a single diagram showing the position and connections of cluster-related resources. See
+  [docs/design.md](docs/design.md#topology-図の設計判断) for design rationale
 
 A toggle in each page header enables auto-refresh (the interval is configurable in Preferences, 60 seconds by default).
 
@@ -105,17 +107,6 @@ Requirements for a command specified in place of `oci`.
   capped at 64MiB (exceeding it fails only that section)
 
 The contract assumes stdout and stderr contain no secrets, so error messages show the exit status and stderr verbatim.
-
-### Migrating from the old "credentials command"
-
-The Preferences "credentials command" of the 0.2 series (a command that returned a credentials JSON on stdout) has been removed.
-This is a breaking change, and setting values are not migrated automatically.
-
-- The old setting value remains in the settings file, but the plugin never reads it (nor runs it as the oci command)
-- Configure the "OCI: oci command" field again
-  - Environments with `~/.oci/config`: leave it blank
-  - Environments that used a credentials command such as `wsl haj oci-cred-json`: specify a command that runs
-    `oci` on the WSL side, e.g. `wsl oci` (let the command itself handle credential injection)
 
 Development: see [CONTRIBUTING.md](CONTRIBUTING.en.md).
 

@@ -1,0 +1,39 @@
+{
+  "data": {
+    "export-options": [
+      {
+        "access": "READ_WRITE",
+        "allowed-auth": [
+          "SYS"
+        ],
+        "anonymous-gid": 65534,
+        "anonymous-uid": 65534,
+        "identity-squash": "NONE",
+        "is-anonymous-access-allowed": false,
+        "require-privileged-source-port": true,
+        "source": "0.0.0.0/0"
+      },
+      {
+        "access": "READ_ONLY",
+        "allowed-auth": [
+          "SYS"
+        ],
+        "anonymous-gid": 65534,
+        "anonymous-uid": 65534,
+        "identity-squash": "ALL",
+        "is-anonymous-access-allowed": false,
+        "require-privileged-source-port": true,
+        "source": "0.0.0.0/0"
+      }
+    ],
+    "export-set-id": "ocid1.exportset.oc1.ap_tokyo_1.aaaaexample0001",
+    "file-system-id": "ocid1.filesystem.oc1.ap_tokyo_1.aaaaexample0002",
+    "id": "ocid1.export.oc1.ap_tokyo_1.aaaaexample0001",
+    "is-idmap-groups-for-sys-auth": false,
+    "lifecycle-state": "ACTIVE",
+    "locks": [],
+    "path": "/staging",
+    "time-created": "2024-07-21T13:32:08+00:00"
+  },
+  "etag": "0000000000000000000000000000000000000000000000000000000000000001"
+}

@@ -48,17 +48,19 @@ FreeLens 1.10.3(Extension API 1.10.3、Windows x64)で動作確認済み。
 1. 拡張機能をデプロイし、FreeLens でクラスタに接続する
 2. クラスタサイドバーの「OCI」メニューをクリックする
 3. OKE クラスタではヘッダにクラスタ情報が表示される。
-   「OCI」配下の子メニュー(ノード / Service↔LB / PV↔ストレージ / ネットワーク)でリソースページを切り替えられる。
+   「OCI」配下の子メニュー(Nodes / Service↔LB / PV ↔ Storage / Network / Topology)でリソースページを切り替えられる。
    非 OKE クラスタでは対象外である旨のガイダンスが表示される。
 
 ページごとの主な機能。
 
-- **ノード**: K8s Node と OCI Instance の対応、ノードプールのサマリ
-- **ネットワーク**: 「Service に繋がらない」調査を、外→内の経路順
+- **Nodes**: K8s Node と OCI Instance の対応、ノードプールのサマリ
+- **Network**: 「Service に繋がらない」調査を、外→内の経路順
   (DNS 突合 → WAF → LB/NLB → LB サブネットの SL/ルート → ノードサブネットの SL/ルート → クラスタ endpoint)で確認できる。
   行の展開でセキュリティルール・WAF ポリシー・証明書期限・ルート(経由ゲートウェイの生死)・
   backend health(unhealthy な backend の検出)を表示する
-- **PV↔ストレージ**: Block Volume / FSS の対応とバックアップ(スナップショット)ポリシー
+- **PV ↔ Storage**: Block Volume / FSS の対応とバックアップ(スナップショット)ポリシー
+- **Topology**: クラスタ関連リソースの位置と繋がりを一枚の図で表示。設計判断は
+  [docs/design.md](docs/design.md#topology-図の設計判断) を参照
 
 各ページのヘッダにあるトグルで自動更新を有効化できる(間隔は Preferences で変更可、既定60秒)。
 
@@ -106,17 +108,6 @@ WSL 側に `~/.oci/config` を置かず、シークレットマネージャか�
 
 標準出力・標準エラーに秘密が含まれない前提の契約であるため、
 エラー表示には終了ステータスと標準エラーをそのまま出す。
-
-### 旧「認証情報コマンド」からの移行
-
-0.2 系までの Preferences「認証情報コマンド」(標準出力に認証情報 JSON を返すコマンド)は廃止した。
-破壊的変更であり、設定値の自動移行は行わない。
-
-- 旧設定の値は設定ファイル上に残るが、プラグインは読まない(oci コマンドとしても実行しない)
-- 「OCI: oci command」欄を改めて設定する
-  - `~/.oci/config` がある環境: 空欄のままでよい
-  - `wsl haj oci-cred-json` のような認証情報コマンドを使っていた環境: `wsl oci` 等、
-    WSL 側で `oci` が動くコマンドを指定する(認証情報の注入はコマンド側で完結させる)
 
 開発: [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
 

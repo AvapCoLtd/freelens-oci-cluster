@@ -8,6 +8,7 @@ import {
   fetchBackendSetHealth,
   fetchCluster,
   fetchFileSystem,
+  fetchFssExport,
   fetchFssSnapshotPolicies,
   fetchFssSnapshotPolicyName,
   fetchGatewayStatus,
@@ -21,6 +22,7 @@ import {
   fetchSecurityList,
   fetchSubnet,
   fetchTaggedResources,
+  fetchVcn,
   fetchVcnGateways,
   fetchVcnNsgs,
   fetchVcnRouteTables,
@@ -51,6 +53,7 @@ const VOLUME_ID = "ocid1.volume.oc1.ap-tokyo-1.aaaaexample0001";
 const BACKUP_POLICY_ID = "ocid1.volumebackuppolicy.oc1..aaaaexample0001";
 const FSS_POLICY_ID = "ocid1.filesystemsnapshotpolicy.oc1.ap_tokyo_1.aaaaexample0001";
 const FILE_SYSTEM_ID = "ocid1.filesystem.oc1.ap_tokyo_1.aaaaexample0001";
+const FSS_EXPORT_ID = "ocid1.export.oc1.ap_tokyo_1.aaaaexample0001";
 const CERTIFICATE_ID = "ocid1.certificate.oc1.ap-tokyo-1.aaaaexample0001";
 const NAT_GATEWAY_ID = "ocid1.natgateway.oc1.ap-tokyo-1.aaaaexample0001";
 const INTERNET_GATEWAY_ID = "ocid1.internetgateway.oc1.ap-tokyo-1.aaaaexample0001";
@@ -61,6 +64,11 @@ const LB_ID = "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const NLB_ID = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const QUERY_TEXT = `query all resources where (definedTags.namespace = 'Oracle-Tags' && definedTags.key = 'CreatedBy' && definedTags.value = '${CLUSTER_ID}')`;
 const OCI_COMMAND = "wsl oci";
+const FORBIDDEN_OR_NOT_FOUND: OciResult<never> = {
+  ok: false,
+  kind: "forbidden_or_not_found",
+  raw: { message: "Authorization failed or requested resource not found.", statusCode: 404 },
+};
 
 type CommandDef = (typeof ociCommands)[keyof typeof ociCommands];
 
@@ -151,6 +159,11 @@ const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }
     expected: [{ command: "fileSystemGet", params: { fileSystemId: FILE_SYSTEM_ID } }],
   },
   {
+    name: "fetchFssExport",
+    call: () => fetchFssExport(FSS_EXPORT_ID, OCI_COMMAND),
+    expected: [{ command: "fssExportGet", params: { exportId: FSS_EXPORT_ID } }],
+  },
+  {
     name: "fetchNodePools",
     call: () => fetchNodePools(CLUSTER_ID, COMPARTMENT_ID, OCI_COMMAND),
     expected: [{ command: "nodePoolList", params: { compartmentId: COMPARTMENT_ID, clusterId: CLUSTER_ID } }],
@@ -159,6 +172,11 @@ const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }
     name: "fetchWafs",
     call: () => fetchWafs([COMPARTMENT_ID], OCI_COMMAND),
     expected: [{ command: "wafList", params: { compartmentId: COMPARTMENT_ID } }],
+  },
+  {
+    name: "fetchVcn",
+    call: () => fetchVcn(VCN_ID, OCI_COMMAND),
+    expected: [{ command: "vcnGet", params: { vcnId: VCN_ID } }],
   },
   {
     name: "fetchSubnet",
@@ -197,6 +215,17 @@ const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }
     expected: [
       { command: "volumeBackupPolicyAssignmentGet", params: { assetId: VOLUME_ID } },
       { command: "volumeBackupPolicyGet", params: { policyId: BACKUP_POLICY_ID } },
+    ],
+  },
+  {
+    name: "fetchVolumeBackupPolicyName(割当照会が権限・不在)",
+    call: () => {
+      replies.set(ociCommands.volumeBackupPolicyAssignmentGet, FORBIDDEN_OR_NOT_FOUND);
+      return fetchVolumeBackupPolicyName(VOLUME_ID, OCI_COMMAND);
+    },
+    expected: [
+      { command: "volumeBackupPolicyAssignmentGet", params: { assetId: VOLUME_ID } },
+      { command: "volumeGet", params: { volumeId: VOLUME_ID } },
     ],
   },
   {
@@ -317,7 +346,7 @@ describe("取得経路のコマンド割り当て", () => {
     expect(settingsSeen).toEqual([OCI_COMMAND]);
   });
 
-  it("定義表の全40コマンドが取得経路から呼ばれる", async () => {
+  it("定義表の全43コマンドが取得経路から呼ばれる", async () => {
     const used = new Set<string>();
     for (const mapping of MAPPINGS) {
       calls = [];
@@ -326,7 +355,7 @@ describe("取得経路のコマンド割り当て", () => {
       for (const call of calls) used.add(call.command);
     }
     expect(used).toEqual(new Set(Object.keys(ociCommands)));
-    expect(used.size).toBe(40);
+    expect(used.size).toBe(43);
   });
 });
 
@@ -364,6 +393,73 @@ describe("エラーの扱い", () => {
       raw: { message: "no oci" },
     });
     expect(calls).toEqual([{ command: "instanceGet", params: { instanceId: INSTANCE_ID } }]);
+  });
+});
+
+describe("参照先の実体なし(孤立PV)の判別", () => {
+  it("割当照会が権限・不在ならVolume getで追撃し、これも権限・不在ならresource_not_foundになる", async () => {
+    replies.set(ociCommands.volumeBackupPolicyAssignmentGet, FORBIDDEN_OR_NOT_FOUND);
+    replies.set(ociCommands.volumeGet, FORBIDDEN_OR_NOT_FOUND);
+    expect(await fetchVolumeBackupPolicyName(VOLUME_ID, OCI_COMMAND)).toEqual({
+      ok: false,
+      kind: "resource_not_found",
+      raw: FORBIDDEN_OR_NOT_FOUND.raw,
+    });
+  });
+
+  it("Volume getが成功するなら割当照会の失敗をそのまま返す(実体はある)", async () => {
+    replies.set(ociCommands.volumeBackupPolicyAssignmentGet, FORBIDDEN_OR_NOT_FOUND);
+    replies.set(ociCommands.volumeGet, { ok: true, data: { id: VOLUME_ID } });
+    expect(await fetchVolumeBackupPolicyName(VOLUME_ID, OCI_COMMAND)).toEqual(FORBIDDEN_OR_NOT_FOUND);
+  });
+
+  it("Volume getが別種のエラーなら割当照会の失敗をそのまま返す", async () => {
+    replies.set(ociCommands.volumeBackupPolicyAssignmentGet, FORBIDDEN_OR_NOT_FOUND);
+    replies.set(ociCommands.volumeGet, { ok: false, kind: "not_authenticated", raw: { message: "expired" } });
+    expect(await fetchVolumeBackupPolicyName(VOLUME_ID, OCI_COMMAND)).toEqual(FORBIDDEN_OR_NOT_FOUND);
+  });
+
+  it("割当照会が権限・不在以外の失敗ならVolume getを叩かない", async () => {
+    replies.set(ociCommands.volumeBackupPolicyAssignmentGet, {
+      ok: false,
+      kind: "not_authenticated",
+      raw: { message: "expired" },
+    });
+    const result = await fetchVolumeBackupPolicyName(VOLUME_ID, OCI_COMMAND);
+    expect(result).toEqual({ ok: false, kind: "not_authenticated", raw: { message: "expired" } });
+    expect(calls).toEqual([{ command: "volumeBackupPolicyAssignmentGet", params: { assetId: VOLUME_ID } }]);
+  });
+
+  it("割当照会が成功する正常系ではVolume getを叩かない", async () => {
+    replies.set(ociCommands.volumeBackupPolicyAssignmentGet, { ok: true, data: [{ "policy-id": BACKUP_POLICY_ID }] });
+    await fetchVolumeBackupPolicyName(VOLUME_ID, OCI_COMMAND);
+    expect(calls.map((call) => call.command)).not.toContain("volumeGet");
+  });
+
+  // FSSはexport / FileSystem自身のgetが失敗経路であり、これ以上確からしい存在確認が無い。
+  it("FSS export getの権限・不在はそのままresource_not_foundになる", async () => {
+    replies.set(ociCommands.fssExportGet, FORBIDDEN_OR_NOT_FOUND);
+    const result = await fetchFssExport(FSS_EXPORT_ID, OCI_COMMAND);
+    expect(result).toEqual({ ok: false, kind: "resource_not_found", raw: FORBIDDEN_OR_NOT_FOUND.raw });
+    expect(calls).toEqual([{ command: "fssExportGet", params: { exportId: FSS_EXPORT_ID } }]);
+  });
+
+  it("FileSystem getの権限・不在はそのままresource_not_foundになる", async () => {
+    replies.set(ociCommands.fileSystemGet, FORBIDDEN_OR_NOT_FOUND);
+    expect(await fetchFileSystem(FILE_SYSTEM_ID, OCI_COMMAND)).toEqual({
+      ok: false,
+      kind: "resource_not_found",
+      raw: FORBIDDEN_OR_NOT_FOUND.raw,
+    });
+  });
+
+  it("権限・不在以外の失敗は実体なしに倒さない", async () => {
+    replies.set(ociCommands.fileSystemGet, { ok: false, kind: "other", raw: { message: "boom" } });
+    expect(await fetchFileSystem(FILE_SYSTEM_ID, OCI_COMMAND)).toEqual({
+      ok: false,
+      kind: "other",
+      raw: { message: "boom" },
+    });
   });
 });
 

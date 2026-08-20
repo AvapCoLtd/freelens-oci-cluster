@@ -10,13 +10,15 @@ import {
   OciPollingIntervalInput,
 } from "./components/oci-preference";
 import { SPINNER_STYLE } from "./components/spinner";
+import { TOPOLOGY_FLOW_STYLE, XYFLOW_STYLE } from "./components/topology-graph-view";
 import { OciNetworkPage } from "./pages/oci-network-page";
 import { OciNodesPage } from "./pages/oci-nodes-page";
 import { OciPvStoragePage } from "./pages/oci-pv-storage-page";
 import { OciServiceLbPage } from "./pages/oci-service-lb-page";
+import { OciTopologyPage } from "./pages/oci-topology-page";
 import { ociClusterStore } from "./store/oci-cluster-store";
 
-const INJECTED_STYLES = [EXPANDABLE_ROW_STYLE, SPINNER_STYLE];
+const INJECTED_STYLES = [EXPANDABLE_ROW_STYLE, SPINNER_STYLE, XYFLOW_STYLE, TOPOLOGY_FLOW_STYLE];
 
 export default class OciClusterRenderer extends Renderer.LensExtension {
   clusterPages = [
@@ -24,6 +26,7 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
     { id: "oci-service-lb", components: { Page: OciServiceLbPage } },
     { id: "oci-pv-storage", components: { Page: OciPvStoragePage } },
     { id: "oci-network", components: { Page: OciNetworkPage } },
+    { id: "oci-topology", components: { Page: OciTopologyPage } },
   ];
 
   // 子メニューにもidが必須(idを省くと登録キーがextension単位まで潰れて衝突し、最後の1件しか残らない。
@@ -56,6 +59,13 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
       parentId: "oci",
       target: { pageId: "oci-network" },
       title: "Network",
+      components: {},
+    },
+    {
+      id: "oci-topology",
+      parentId: "oci",
+      target: { pageId: "oci-topology" },
+      title: "Topology",
       components: {},
     },
     {

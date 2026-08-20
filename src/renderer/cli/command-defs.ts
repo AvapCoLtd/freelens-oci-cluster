@@ -6,6 +6,7 @@ import type {
   OciDrg,
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
+  OciFssExport,
   OciInstance,
   OciInternetGateway,
   OciLoadBalancer,
@@ -20,6 +21,7 @@ import type {
   OciRouteTable,
   OciSecurityList,
   OciSubnet,
+  OciVcn,
   OciVolume,
   OciVolumeBackupPolicy,
   OciVolumeBackupPolicyAssignment,
@@ -126,9 +128,19 @@ export const ociCommands = {
     compartmentId,
   ]),
 
+  volumeGet: getOne<{ volumeId: string }, OciVolume>(["bv", "volume", "get"], ({ volumeId }) => [
+    "--volume-id",
+    volumeId,
+  ]),
+
   fileSystemGet: getOne<{ fileSystemId: string }, OciFileSystem>(["fs", "file-system", "get"], ({ fileSystemId }) => [
     "--file-system-id",
     fileSystemId,
+  ]),
+
+  fssExportGet: getOne<{ exportId: string }, OciFssExport>(["fs", "export", "get"], ({ exportId }) => [
+    "--export-id",
+    exportId,
   ]),
 
   nodePoolList: listAll<{ compartmentId: string; clusterId: string }, OciNodePoolSummary>(
@@ -140,6 +152,8 @@ export const ociCommands = {
     ["waf", "web-app-firewall", "list"],
     ({ compartmentId }) => ["--compartment-id", compartmentId],
   ),
+
+  vcnGet: getOne<{ vcnId: string }, OciVcn>(["network", "vcn", "get"], ({ vcnId }) => ["--vcn-id", vcnId]),
 
   subnetGet: getOne<{ subnetId: string }, OciSubnet>(["network", "subnet", "get"], ({ subnetId }) => [
     "--subnet-id",

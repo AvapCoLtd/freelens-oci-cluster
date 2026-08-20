@@ -53,7 +53,7 @@ export interface OciCluster {
   };
 }
 
-/** `bv volume list` → 07 */
+/** `bv volume list` → 07、`bv volume get` → 31 */
 export interface OciVolume {
   id: string;
   "display-name"?: string;
@@ -68,18 +68,38 @@ export interface OciFileSystem {
   "filesystem-snapshot-policy-id"?: string;
 }
 
+/** `fs export get` → 30 */
+export interface OciFssExport {
+  "file-system-id"?: string;
+}
+
 /** `search resource structured-search` → 04 */
 export interface OciResourceSummary {
   identifier?: string;
   "compartment-id"?: string;
 }
 
+/** `network vcn get` → 29 */
+export interface OciVcn {
+  id: string;
+  "display-name"?: string;
+  "lifecycle-state"?: string;
+  "cidr-block"?: string;
+  "cidr-blocks"?: string[];
+  "ipv6-cidr-blocks"?: string[] | null;
+}
+
 /** `network subnet get` / `network subnet list` → 11, 21 */
 export interface OciSubnet {
   id: string;
   "display-name"?: string;
+  "lifecycle-state"?: string;
   "vcn-id"?: string;
   "cidr-block"?: string;
+  /** IPv4は複数CIDRを持てる。`cidr-block`は第1ブロックのみを返す */
+  "ipv4-cidr-blocks"?: string[] | null;
+  "ipv6-cidr-block"?: string | null;
+  "ipv6-cidr-blocks"?: string[] | null;
   "prohibit-public-ip-on-vnic"?: boolean;
   "security-list-ids"?: string[];
   "route-table-id"?: string;
