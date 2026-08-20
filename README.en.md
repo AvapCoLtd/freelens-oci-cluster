@@ -5,118 +5,76 @@
 
 See the OCI resources backing your open cluster, right in FreeLens.
 
-![Network page: LB/NLB row expanded, showing a CRITICAL backend health status](docs/images/network-lb-critical.png)
+![Network page showing a CRITICAL backend health status for an LB/NLB](docs/images/network-lb-critical.png)
 
 [日本語](README.md)
 
-FreeLens shows Kubernetes resources.
-A cluster may run on Oracle Cloud Infrastructure (OCI) — for example an OKE cluster.
-In that case, there is no built-in way to see the corresponding OCI resources.
+The extension visualizes relationships between Kubernetes and Oracle Cloud Infrastructure (OCI) resources that FreeLens does not show by default.
 
 - Node → Instance
 - Service (type=LoadBalancer) → NLB / classic LB
 - PersistentVolume → Block Volume / FSS
 
-`freelens-oci-cluster` adds an "OCI" cluster sidebar menu.
-For the currently open cluster, it automatically resolves and displays these OCI resources, starting from each Node's `providerID`.
-See [docs/design.md](docs/design.md) for the design rationale and domain knowledge, including how the mappings are resolved and the known limitations.
+Starting from each Node's `providerID`, it automatically resolves OCI resources related to the open cluster.
+It never performs operations that mutate OCI resources.
 
 ## Prerequisites
 
-You need an environment where the `oci` CLI (or a compatible command that accepts the same arguments) runs.
-The plugin spawns this command as a child process on every data fetch and reads the JSON it writes to stdout.
+FreeLens 1.8.0 or later and an authenticated `oci` CLI are required.
+The extension is verified on FreeLens 1.10.3 (Extension API 1.10.3, Windows x64).
 
-- `oci` is on `PATH` and authenticated.
-  Any authentication method works (API key auth via `~/.oci/config`, session token auth via `oci session authenticate`, and so on)
-- Even in environments that keep no config file on disk (e.g. secret-manager-based operations), you can point the plugin
-  at a wrapper command that injects the credentials and launches `oci` (see "Settings" below)
-- The plugin never receives keys or tokens. Authentication is handled entirely inside `oci`
-
-## Compatibility
-
-Requires FreeLens 1.8.0 or later (see `engines` in package.json).
-Verified on FreeLens 1.10.3 (Extension API 1.10.3, Windows x64).
+The extension spawns `oci` for each data fetch and reads its JSON output.
+It never receives keys or tokens; authentication remains entirely inside `oci`.
+You can also configure a wrapper command or an `oci` installation running under WSL.
 
 ## Install
 
-1. Download the latest `.tgz` from GitHub Releases: <https://github.com/AvapCoLtd/freelens-oci-cluster/releases>
-2. Drag & drop it onto the Extensions screen in FreeLens
-3. To update, repeat the same steps with the new `.tgz`
+1. Download the latest `.tgz` from [GitHub Releases](https://github.com/AvapCoLtd/freelens-oci-cluster/releases).
+2. Drag and drop it onto the Extensions screen in FreeLens.
+3. Repeat the same operation with a new `.tgz` when updating.
 
 ## Usage
 
-1. Deploy the extension and connect to a cluster in FreeLens
-2. Click the "OCI" menu in the cluster sidebar
-3. For OKE clusters, a header shows cluster info.
-   The sub-menus under "OCI" (Nodes / Service↔LB / PV↔Storage / Network / Topology) switch between resource pages.
-   For non-OKE clusters, an out-of-scope guidance message is shown instead.
+Connect to a cluster in FreeLens and open the "OCI" menu in the cluster sidebar.
+The following pages are available for OKE clusters.
+For non-OKE clusters, the extension displays an out-of-scope message.
 
-Main features per page.
+| Page | Contents |
+|---|---|
+| Nodes | K8s Node to OCI Instance mappings and a node pool summary |
+| Service↔LB | LoadBalancer Service to NLB / classic LB mappings |
+| PV ↔ Storage | PersistentVolume to Block Volume / FSS mappings and backup policies |
+| Network | DNS, WAF, LB/NLB, subnet, route, and backend health checks in outside-in path order |
+| Topology | A diagram of cluster-related resources and their connections |
 
-- **Nodes**: the mapping between K8s Nodes and OCI Instances, plus a node pool summary
-- **Network**: walk a "the Service is unreachable" investigation in outside-in path order
-  (DNS cross-check → WAF → LB/NLB → security lists and route tables of the LB subnet → those of the node subnet → cluster endpoint).
-  Expanding a row shows security rules, WAF policies, certificate expiry, routes (whether the gateway on the path is alive),
-  and backend health (detecting unhealthy backends)
-- **PV↔Storage**: the mapping to Block Volume / FSS and the backup (snapshot) policies
-- **Topology**: a single diagram showing the position and connections of cluster-related resources. See
-  [docs/design.md](docs/design.md#topology-図の設計判断) for design rationale
+The search bar on each page filters displayed content, including expandable details.
+A header toggle enables auto-refresh; its interval is configurable in Preferences (60 seconds by default).
 
-Each page has a filter search bar. Rows that only match on values inside the expandable detail area (security rules,
-backend health, etc.) are auto-expanded. In Topology, non-matching nodes and edges are dimmed instead.
+## Settings
 
-A toggle in each page header enables auto-refresh (the interval is configurable in Preferences, 60 seconds by default).
+Set the command to run in the "OCI: oci command" field in FreeLens Preferences.
 
-It is read-only.
-This plugin never performs any operation that mutates OCI resources.
+- A blank value uses the `oci` found on `PATH`.
+- Leading arguments are allowed, such as `oci --profile foo`.
+- Wrapper commands such as `wsl oci` are supported.
+- The value is split on whitespace; quotes are not interpreted.
 
-### Settings
+Changes take effect on the next data fetch.
+See [OCI command integration](docs/oci-command.en.md) for the compatible-command output, timeout, and paging contract.
 
-FreeLens Preferences has an "OCI: oci command" field for the command to execute.
+## Documentation
 
-- When blank, the `oci` on `PATH` is executed (this is usually enough)
-- When set, the value is executed as an oci-compatible command.
-  Leading arguments are allowed, e.g. `oci --profile foo`
-- The value is split on whitespace into the executable and its leading arguments.
-  Quotes are not interpreted, so a single argument containing whitespace cannot be expressed
-- Changes take effect from the next data fetch (the refresh button, or reselecting the cluster)
+| Task | Reference |
+|---|---|
+| Set up development, run tests, or release | [Contributing](CONTRIBUTING.en.md) |
+| Understand resource mapping and design rationale | [Design decisions](docs/design.md) |
+| Implement an `oci` wrapper or compatible command | [OCI command integration](docs/oci-command.en.md) |
+| Review findings about the FreeLens Extension API | [FreeLens Extension API sources](docs/extension-api.md) |
 
-Example configuration for running FreeLens on Windows while `oci` lives on the WSL side.
+## Repositories
 
-```text
-wsl oci
-```
-
-If you keep no `~/.oci/config` on the WSL side and instead have a wrapper that injects credentials from a secret
-manager before launching `oci`, point the setting at that wrapper (e.g. `wsl haj oci`).
-
-### Compatible command contract
-
-Requirements for a command specified in place of `oci`.
-
-- It forwards the given arguments to `oci` as-is and passes stdout, stderr, and the exit status straight through
-- It accepts the subcommands the plugin runs.
-  [src/renderer/cli/command-defs.ts](src/renderer/cli/command-defs.ts) is the single source of truth for the full list
-  (read-only `get` / `list` / `search` operations only; it is not duplicated here)
-- Output contract
-  - The plugin adds `--output json` to every call. Stdout is the same JSON as `oci` produces (`{"data": …}`)
-  - `--all` is added to list operations. Only `search resource structured-search`, which has no `--all`,
-    is paged manually with `--page`, following the top-level `opc-next-page`.
-    Manual paging is capped at 100 pages; exceeding it fails only that section
-  - Success is exit status 0. Output on stderr is still treated as success as long as the status is 0
-  - Failure is a non-zero exit status. The error category (authentication / permission or not-found / other)
-    is determined from the `ServiceError:` JSON on stderr
-- Each call times out after 60 seconds. At most 8 processes run concurrently, and stdout of a single call is
-  capped at 64MiB (exceeding it fails only that section)
-
-The contract assumes stdout and stderr contain no secrets, so error messages show the exit status and stderr verbatim.
-
-Development: see [CONTRIBUTING.md](CONTRIBUTING.en.md).
-
-## Links
-
-- https://github.com/AvapCoLtd/freelens-oci-cluster (public)
-- https://gitlab.avaper.day/avap/freelens-plugins/freelens-oci-cluster (development)
+- [GitHub (public and releases)](https://github.com/AvapCoLtd/freelens-oci-cluster)
+- [GitLab (development)](https://gitlab.avaper.day/avap/freelens-plugins/freelens-oci-cluster)
 
 ## License
 

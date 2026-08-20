@@ -1,12 +1,15 @@
 ---
-last_verified: 2026-08-04
+last_verified: 2026-08-20
 ---
 
 # freelens-oci-cluster 設計判断の記録
 
+> 実装理由、OCI リソースの対応関係、既知の制約を確認するときに参照する。
+
 コードから読み取れない判断とドメイン知識を記録する。
 
-使い方・前提条件・oci コマンドの設定と互換コマンド契約は [README](../README.md) を参照。Extension API の一般的な罠は [FreeLens 拡張 API の情報源](extension-api.md) を参照。
+使い方と前提条件は [README](../README.md)、oci コマンドの詳細は [OCI コマンド連携](oci-command.md)を参照。
+Extension API の一般的な罠は [FreeLens 拡張 API の情報源](extension-api.md)を参照。
 
 ## 関連リソースの定義
 

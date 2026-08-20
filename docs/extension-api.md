@@ -4,6 +4,8 @@ last_verified: 2026-07-31
 
 # FreeLens 拡張 API の情報源
 
+> FreeLens Extension API の仕様や実装上の罠を調査するときに参照する。
+
 FreeLens 拡張開発で参照すべき情報源へのポインタ集。
 
 陳腐化を避けるため、ここには内容を転記せずリンク先を一次情報として参照すること。

@@ -3,121 +3,79 @@
 ![License](https://img.shields.io/github/license/AvapCoLtd/freelens-oci-cluster)
 ![Release](https://img.shields.io/github/v/release/AvapCoLtd/freelens-oci-cluster)
 
-開いているクラスタの基盤 OCI リソースを、FreeLens 上で確認できるようにする。
+開いているクラスタの基盤 OCI リソースを FreeLens 上で確認できるようにする。
 
-![ネットワークページ: LB/NLB 行を展開し、backend health が CRITICAL と表示された状態](docs/images/network-lb-critical.png)
+![ネットワークページで LB/NLB の backend health が CRITICAL と表示された状態](docs/images/network-lb-critical.png)
 
 [English](README.en.md)
 
-FreeLens は Kubernetes リソースを表示する。
-クラスタが Oracle Cloud Infrastructure (OCI) 上で動くことがある(例: OKE)。
-その場合、対応する OCI リソースを確認する手段が標準にはない。
+Kubernetes と Oracle Cloud Infrastructure（OCI）の対応関係を可視化する。
+この情報は FreeLens の標準機能では表示されない。
 
 - Node → Instance
-- Service(type=LoadBalancer) → NLB / classic LB
+- Service（type=LoadBalancer）→ NLB / classic LB
 - PersistentVolume → Block Volume / FSS
 
-`freelens-oci-cluster` は「OCI」クラスタサイドバーメニューを追加する。
-開いているクラスタについて、Node の `providerID` を起点にこれらの OCI リソースを自動解決して表示する。
-対応関係の解決方法や既知の制約を含む設計判断・ドメイン知識は [docs/design.md](docs/design.md) を参照。
+Node の `providerID` を起点に、開いているクラスタに関係する OCI リソースを自動解決する。
+OCI リソースを変更する操作は行わない。
 
 ## 前提条件
 
-`oci` CLI(または同じ引数を受ける互換コマンド)が動く環境が必要。
-プラグインはデータ取得のたびにこのコマンドを子プロセスとして実行し、標準出力の JSON を読む。
+FreeLens 1.8.0 以上と、認証済みの `oci` CLI が必要。
+FreeLens 1.10.3（Extension API 1.10.3、Windows x64）で動作確認済み。
 
-- `oci` が PATH にあり、認証が通っていること。
-  認証方式は問わない(`~/.oci/config` の API キー認証、`oci session authenticate` のセッショントークン認証など)
-- 設定ファイルを置かない環境(シークレットマネージャ運用等)でも、
-  認証情報を注入して `oci` を起動するラッパコマンドを用意すれば、それを指定して使える(下記「設定」を参照)
-- プラグインは鍵・トークンを一切受け取らない。認証は `oci` の内部で完結する
-
-## 対応バージョン
-
-FreeLens 1.8.0 以上(package.json の `engines` を参照)。
-FreeLens 1.10.3(Extension API 1.10.3、Windows x64)で動作確認済み。
+プラグインはデータ取得のたびに `oci` を子プロセスとして実行し、JSON 出力を読む。
+鍵やトークンは受け取らず、認証は `oci` の内部で完結する。
+ラッパコマンドや WSL 上の `oci` も設定できる。
 
 ## インストール
 
-1. GitHub Releases から最新の `.tgz` をダウンロードする: <https://github.com/AvapCoLtd/freelens-oci-cluster/releases>
-2. FreeLens の Extensions 画面にドラッグ&ドロップする
-3. 更新時も同じ手順を新しい `.tgz` で繰り返す
+1. [GitHub Releases](https://github.com/AvapCoLtd/freelens-oci-cluster/releases) から最新の `.tgz` をダウンロードする。
+2. FreeLens の Extensions 画面へドラッグ&ドロップする。
+3. 更新時も新しい `.tgz` で同じ操作を行う。
 
 ## 使い方
 
-1. 拡張機能をデプロイし、FreeLens でクラスタに接続する
-2. クラスタサイドバーの「OCI」メニューをクリックする
-3. OKE クラスタではヘッダにクラスタ情報が表示される。
-   「OCI」配下の子メニュー(Nodes / Service↔LB / PV ↔ Storage / Network / Topology)でリソースページを切り替えられる。
-   非 OKE クラスタでは対象外である旨のガイダンスが表示される。
+FreeLens でクラスタへ接続し、クラスタサイドバーの「OCI」メニューを開く。
+OKE クラスタでは次のページを利用できる。
+非 OKE クラスタでは対象外である旨を表示する。
 
-ページごとの主な機能。
+| ページ | 内容 |
+|---|---|
+| Nodes | K8s Node と OCI Instance の対応、ノードプールのサマリ |
+| Service↔LB | LoadBalancer Service と NLB / classic LB の対応 |
+| PV ↔ Storage | PersistentVolume と Block Volume / FSS の対応、バックアップポリシー |
+| Network | DNS、WAF、LB/NLB、サブネット、ルート、backend health を外から内の経路順に確認 |
+| Topology | クラスタ関連リソースの位置と接続を一枚の図で表示 |
 
-- **Nodes**: K8s Node と OCI Instance の対応、ノードプールのサマリ
-- **Network**: 「Service に繋がらない」調査を、外→内の経路順
-  (DNS 突合 → WAF → LB/NLB → LB サブネットの SL/ルート → ノードサブネットの SL/ルート → クラスタ endpoint)で確認できる。
-  行の展開でセキュリティルール・WAF ポリシー・証明書期限・ルート(経由ゲートウェイの生死)・
-  backend health(unhealthy な backend の検出)を表示する
-- **PV ↔ Storage**: Block Volume / FSS の対応とバックアップ(スナップショット)ポリシー
-- **Topology**: クラスタ関連リソースの位置と繋がりを一枚の図で表示。設計判断は
-  [docs/design.md](docs/design.md#topology-図の設計判断) を参照
+各ページの検索バーは、展開領域を含む表示内容を絞り込む。
+ヘッダのトグルで自動更新を有効にでき、更新間隔は Preferences で変更できる（既定60秒）。
 
-各ページに絞り込み検索バーがある。展開領域(セキュリティルール・backend health 等)の値にしかマッチしない行は自動展開される。
-Topology では該当ノード・エッジ以外を減光する。
+## 設定
 
-各ページのヘッダにあるトグルで自動更新を有効化できる(間隔は Preferences で変更可、既定60秒)。
+FreeLens の Preferences にある「OCI: oci command」へ実行コマンドを設定する。
 
-閲覧専用。
-本プラグインは OCI リソースの変更系操作を一切行わない。
+- 空欄では PATH 上の `oci` を使う。
+- `oci --profile foo` のような前置引数を指定できる。
+- `wsl oci` のようなラッパコマンドを指定できる。
+- 値は空白で分割され、クォートは解釈されない。
 
-### 設定
+変更は次回のデータ取得から反映される。
+互換コマンドの出力、タイムアウト、ページングなどの契約は[OCI コマンド連携](docs/oci-command.md)を参照。
 
-FreeLens の Preferences 内「OCI: oci command」に、実行するコマンドの入力欄がある。
+## ドキュメント
 
-- 空欄の場合は PATH の `oci` を実行する(通常はこちらで足りる)
-- 値を設定すると、それを oci 互換コマンドとして実行する。
-  `oci --profile foo` のように引数を前置してもよい
-- 値は空白区切りで実行ファイルと前置引数に分解する。
-  クォートは解釈しないため、空白を含む単一引数は指定できない
-- 変更は次回のデータ取得(［更新］ボタン、またはクラスタの再選択)から反映される
+| やりたいこと | 参照先 |
+|---|---|
+| 開発環境を準備する、テスト・リリースを行う | [Contributing](CONTRIBUTING.md) |
+| OCI リソースの対応関係や設計理由を確認する | [設計判断の記録](docs/design.md) |
+| `oci` のラッパ・互換コマンドを実装する | [OCI コマンド連携](docs/oci-command.md) |
+| FreeLens Extension API の調査結果を確認する | [FreeLens 拡張 API の情報源](docs/extension-api.md) |
 
-FreeLens を Windows 側で動かし、`oci` は WSL 側にある構成の設定例。
+## リポジトリ
 
-```text
-wsl oci
-```
-
-WSL 側に `~/.oci/config` を置かず、シークレットマネージャから認証情報を注入して `oci` を起動する
-ラッパを用意している場合は、そのラッパを指定する(例: `wsl haj oci`)。
-
-### 互換コマンド契約
-
-`oci` の代わりに指定できるコマンドの条件。
-
-- 渡された引数をそのまま `oci` へ転送し、標準出力・標準エラー・終了ステータスを素通しする
-- プラグインが実行するサブコマンドを受け付ける。
-  対象の全件は [src/renderer/cli/command-defs.ts](src/renderer/cli/command-defs.ts) が単一ソース
-  (`get` / `list` / `search` の読み取り操作のみ。ここには転記しない)
-- 出力契約
-  - プラグインが全呼び出しに `--output json` を付ける。標準出力は `oci` と同じ JSON(`{"data": …}`)
-  - list 系には `--all` を付ける。`--all` を持たない `search resource structured-search` のみ
-    `--page` で手動ページングし、トップレベルの `opc-next-page` を辿る。
-    手動ページングは最大 100 ページで打ち切り、超過はそのセクションのエラーになる
-  - 成功は終了ステータス 0。標準エラーへの出力があっても 0 なら成功として扱う
-  - 失敗は非ゼロの終了ステータス。標準エラーの `ServiceError:` の JSON からエラー種別
-    (認証系 / 権限・不在 / その他)を判定する
-- 1 呼び出しあたり 60 秒でタイムアウトする。同時に起動するプロセスは最大 8、
-  1 呼び出しの標準出力は最大 64MiB(超過はそのセクションのみエラーになる)
-
-標準出力・標準エラーに秘密が含まれない前提の契約であるため、
-エラー表示には終了ステータスと標準エラーをそのまま出す。
-
-開発: [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
-
-## リンク
-
-- https://github.com/AvapCoLtd/freelens-oci-cluster (公開用)
-- https://gitlab.avaper.day/avap/freelens-plugins/freelens-oci-cluster (開発用)
+- [GitHub（公開・リリース）](https://github.com/AvapCoLtd/freelens-oci-cluster)
+- [GitLab（開発）](https://gitlab.avaper.day/avap/freelens-plugins/freelens-oci-cluster)
 
 ## License
 
