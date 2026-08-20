@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ClusterOciData } from "../fetch/fetch";
 import type { OciResult } from "../oci/result";
 import type { OciGatewayStatusView } from "./gateway-status";
+import { toTopologyFlow } from "./topology-flow";
 import {
   buildTopologyGraph,
   ipInCidr,
@@ -15,6 +16,8 @@ import {
   type TopologyK8sService,
   type TopologyNode,
 } from "./topology-graph";
+import { layoutTopology } from "./topology-layout";
+import { matchTopologyNodes } from "./topology-search";
 
 const STDOUT_DIR = join(import.meta.dirname, "..", "cli", "__fixtures__", "stdout");
 
@@ -677,6 +680,15 @@ describe("buildTopologyGraph 集約縮退", () => {
         target: `instance-group:${SUBNET_A}`,
         kind: "backend",
       },
+    ]);
+  });
+
+  it("畳んだInstanceの名前・OCIDで集約ノードが検索にマッチする", () => {
+    const graph = buildTopologyGraph(manyInstancesInput(11));
+    const flow = toTopologyFlow(graph, layoutTopology(graph.nodes, graph.edges));
+    expect([...matchTopologyNodes(flow.nodes, "node-7")]).toEqual([`instance-group:${SUBNET_A}`]);
+    expect([...matchTopologyNodes(flow.nodes, "ocid1.instance.oc1.ap-tokyo-1.i17")]).toEqual([
+      `instance-group:${SUBNET_A}`,
     ]);
   });
 

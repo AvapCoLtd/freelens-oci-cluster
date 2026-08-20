@@ -75,6 +75,6 @@ export function routeRows(rt: OciRouteTable): RouteRow[] {
     destination: rule.destination ?? rule["cidr-block"] ?? "-",
     entityKind: routeEntityKind(rule["network-entity-id"]),
     entityId: rule["network-entity-id"],
-    description: rule.description,
+    description: rule.description ?? undefined,
   }));
 }

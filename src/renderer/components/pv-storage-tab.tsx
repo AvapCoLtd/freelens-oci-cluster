@@ -2,6 +2,7 @@ import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type { ClusterOciData } from "../fetch/fetch";
 import type { OciConsoleResourceType } from "../match/console-url";
+import { filterRows } from "../match/filter-rows";
 import {
   distinctBlockVolumeOcids,
   distinctFssRefOcids,
@@ -20,11 +21,13 @@ import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
 import { OcidCopyButton } from "./ocid-copy-button";
+import { SearchBar } from "./search-bar";
 import { SortableHeaderCell } from "./sortable-header-cell";
 import { LoadingBlock } from "./spinner";
 import { LifecycleBadge } from "./status-badge";
 import { TABLE_STYLE, TD_STYLE, TH_STYLE, UNMATCHED_ROW_STYLE } from "./table-styles";
 import { useColumnSort } from "./use-column-sort";
+import type { SearchState } from "./use-search-query";
 
 interface StorageResolution {
   displayName: string;
@@ -133,6 +136,19 @@ const SORT_VALUE: Record<PvColumn, (row: PvRow) => string | number | undefined> 
   lifecycle: (row) => row.storage.lifecycleState,
 };
 
+function searchTextOf(row: PvRow): readonly (string | number | undefined)[] {
+  return [
+    row.pvName,
+    row.pvcLabel,
+    // orphaned行のentity列はORPHAN_MESSAGE(実体名ではない)ため、説明文で行が引けないよう外す。
+    row.storage.orphaned ? undefined : row.storage.displayName,
+    row.storage.kindLabel,
+    row.storage.sizeGb,
+    row.storage.backupLabel,
+    row.storage.lifecycleState,
+  ];
+}
+
 /** 一覧の各セルが埋まる材料(OCI側)が揃ったか。PV行はK8s由来なので行数自体は先に確定している。 */
 function storageCellsReady(data: ClusterOciData, resolutions: PvStorageResolution[]): boolean {
   if (!sectionsReady(data.volumes, data.taggedResources)) return false;
@@ -153,11 +169,13 @@ function storageCellsReady(data: ClusterOciData, resolutions: PvStorageResolutio
 export interface PvStorageTabProps {
   data: ClusterOciData;
   region: string | undefined;
+  search: SearchState;
 }
 
-export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvStorageTabProps) {
+export const PvStorageTab = observer(function PvStorageTab({ data, region, search }: PvStorageTabProps) {
   const pvStore = Renderer.K8sApi.persistentVolumeStore;
   const [sort, toggleSort] = useColumnSort<PvColumn>("pv");
+  const { query, setQuery } = search;
 
   if (!pvStore.isLoaded) {
     return <LoadingBlock />;
@@ -189,82 +207,87 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region }: PvS
       storage: resolveStorage(data, resolution),
     };
   });
-  const sortedRows = sortRows(rows, SORT_VALUE[sort.column], sort.direction);
+  const sortedRows = sortRows(filterRows(rows, query, searchTextOf), SORT_VALUE[sort.column], sort.direction);
 
   return (
     <div>
       {!data.volumes.ok && <SectionError kind={data.volumes.kind} raw={data.volumes.raw} />}
-      <table style={TABLE_STYLE}>
-        <thead>
-          <tr>
-            <SortableHeaderCell column="pv" sort={sort} onSort={toggleSort}>
-              PV
-            </SortableHeaderCell>
-            <SortableHeaderCell column="pvc" sort={sort} onSort={toggleSort}>
-              PVC
-            </SortableHeaderCell>
-            <SortableHeaderCell column="entity" sort={sort} onSort={toggleSort}>
-              Entity Name
-            </SortableHeaderCell>
-            <SortableHeaderCell column="kind" sort={sort} onSort={toggleSort}>
-              Kind
-            </SortableHeaderCell>
-            <SortableHeaderCell column="size" sort={sort} onSort={toggleSort}>
-              Size (GB)
-            </SortableHeaderCell>
-            <SortableHeaderCell column="backup" sort={sort} onSort={toggleSort}>
-              Backup
-            </SortableHeaderCell>
-            <SortableHeaderCell column="lifecycle" sort={sort} onSort={toggleSort}>
-              lifecycle-state
-            </SortableHeaderCell>
-            <th style={TH_STYLE}>OCID</th>
-            <th style={TH_STYLE} />
-          </tr>
-        </thead>
-        <tbody>
-          {sortedRows.map((row) => {
-            const { storage } = row;
-            if (storage.kindLabel === "Unsupported") {
+      <SearchBar query={query} onChange={setQuery} placeholder="Search PV / PVC / entity name" />
+      {sortedRows.length === 0 ? (
+        <EmptyState message={`No volumes match "${query}"`} />
+      ) : (
+        <table style={TABLE_STYLE}>
+          <thead>
+            <tr>
+              <SortableHeaderCell column="pv" sort={sort} onSort={toggleSort}>
+                PV
+              </SortableHeaderCell>
+              <SortableHeaderCell column="pvc" sort={sort} onSort={toggleSort}>
+                PVC
+              </SortableHeaderCell>
+              <SortableHeaderCell column="entity" sort={sort} onSort={toggleSort}>
+                Entity Name
+              </SortableHeaderCell>
+              <SortableHeaderCell column="kind" sort={sort} onSort={toggleSort}>
+                Kind
+              </SortableHeaderCell>
+              <SortableHeaderCell column="size" sort={sort} onSort={toggleSort}>
+                Size (GB)
+              </SortableHeaderCell>
+              <SortableHeaderCell column="backup" sort={sort} onSort={toggleSort}>
+                Backup
+              </SortableHeaderCell>
+              <SortableHeaderCell column="lifecycle" sort={sort} onSort={toggleSort}>
+                lifecycle-state
+              </SortableHeaderCell>
+              <th style={TH_STYLE}>OCID</th>
+              <th style={TH_STYLE} />
+            </tr>
+          </thead>
+          <tbody>
+            {sortedRows.map((row) => {
+              const { storage } = row;
+              if (storage.kindLabel === "Unsupported") {
+                return (
+                  <tr key={row.key} style={UNMATCHED_ROW_STYLE}>
+                    <td style={TD_STYLE}>{row.pvName}</td>
+                    <td style={TD_STYLE}>{row.pvcLabel}</td>
+                    <td style={TD_STYLE} colSpan={6}>
+                      Unsupported (no matching Block Volume / FSS found)
+                    </td>
+                  </tr>
+                );
+              }
               return (
-                <tr key={row.key} style={UNMATCHED_ROW_STYLE}>
+                <tr key={row.key} style={storage.orphaned ? UNMATCHED_ROW_STYLE : undefined}>
                   <td style={TD_STYLE}>{row.pvName}</td>
                   <td style={TD_STYLE}>{row.pvcLabel}</td>
-                  <td style={TD_STYLE} colSpan={6}>
-                    Unsupported (no matching Block Volume / FSS found)
+                  <td style={TD_STYLE}>{storage.displayName}</td>
+                  <td style={TD_STYLE}>{storage.kindLabel}</td>
+                  <td style={TD_STYLE}>{storage.kindLabel === "Volume" ? (storage.sizeGb ?? "-") : "-"}</td>
+                  <td style={TD_STYLE}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {storage.backupLabel}
+                      {storage.backupPolicyId && storage.backupConsoleType && region && (
+                        <ConsoleButton type={storage.backupConsoleType} ocid={storage.backupPolicyId} region={region} />
+                      )}
+                    </span>
+                  </td>
+                  <td style={TD_STYLE}>
+                    <LifecycleBadge state={storage.lifecycleState} />
+                  </td>
+                  <td style={TD_STYLE}>{storage.ocid ? <OcidCopyButton ocid={storage.ocid} /> : "-"}</td>
+                  <td style={TD_STYLE}>
+                    {storage.ocid && storage.consoleType && region && (
+                      <ConsoleButton type={storage.consoleType} ocid={storage.ocid} region={region} />
+                    )}
                   </td>
                 </tr>
               );
-            }
-            return (
-              <tr key={row.key} style={storage.orphaned ? UNMATCHED_ROW_STYLE : undefined}>
-                <td style={TD_STYLE}>{row.pvName}</td>
-                <td style={TD_STYLE}>{row.pvcLabel}</td>
-                <td style={TD_STYLE}>{storage.displayName}</td>
-                <td style={TD_STYLE}>{storage.kindLabel}</td>
-                <td style={TD_STYLE}>{storage.kindLabel === "Volume" ? (storage.sizeGb ?? "-") : "-"}</td>
-                <td style={TD_STYLE}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    {storage.backupLabel}
-                    {storage.backupPolicyId && storage.backupConsoleType && region && (
-                      <ConsoleButton type={storage.backupConsoleType} ocid={storage.backupPolicyId} region={region} />
-                    )}
-                  </span>
-                </td>
-                <td style={TD_STYLE}>
-                  <LifecycleBadge state={storage.lifecycleState} />
-                </td>
-                <td style={TD_STYLE}>{storage.ocid ? <OcidCopyButton ocid={storage.ocid} /> : "-"}</td>
-                <td style={TD_STYLE}>
-                  {storage.ocid && storage.consoleType && region && (
-                    <ConsoleButton type={storage.consoleType} ocid={storage.ocid} region={region} />
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 });

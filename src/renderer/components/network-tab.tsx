@@ -1,10 +1,21 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
-import type * as React from "react";
+import * as React from "react";
 import type { ClusterOciData } from "../fetch/fetch";
 import { collectHostnames, type DnsMatchKind, matchDnsToLbs } from "../match/dns-check";
+import { filterRows } from "../match/filter-rows";
 import { gatewayHealth, isSupportedGatewayId } from "../match/gateway-status";
 import { daysUntil } from "../match/lb-certificates";
+import {
+  DNS_MATCH_LABEL,
+  displayNameOrOcid,
+  lbKindLabel,
+  lbVisibilityLabel,
+  listenerLabel,
+  RESOLUTION_FAILED_LABEL,
+  subnetPublicIpLabel,
+  subnetRoleLabel,
+} from "../match/network-labels";
 import {
   buildNetworkView,
   clusterLbIds,
@@ -12,7 +23,19 @@ import {
   type LbRow,
   type NetworkView,
   type SubnetRow,
+  type WafRow,
 } from "../match/network-path";
+import {
+  allSearchValues,
+  type DnsRow,
+  dnsSearchValues,
+  lbSearchValues,
+  matchedOnlyInDetail,
+  nsgSearchValues,
+  type SearchValues,
+  subnetSearchValues,
+  wafSearchValues,
+} from "../match/network-search";
 import { nsgRuleRows, routeRows, securityListRuleRows } from "../match/rule-rows";
 import { entriesReady, sectionsReady } from "../match/section-ready";
 import { ingressIpsOfServices } from "../match/service-lb";
@@ -26,9 +49,11 @@ import { ExpandableRow } from "./expandable-row";
 import { Icon } from "./freelens-ui";
 import { OcidCopyButton } from "./ocid-copy-button";
 import { RouteRuleTable, RuleTable } from "./rule-table";
+import { SearchBar } from "./search-bar";
 import { LoadingBlock, Spinner } from "./spinner";
-import { LifecycleBadge, StatusBadge } from "./status-badge";
+import { LifecycleBadge, StatusBadge, type StatusTone } from "./status-badge";
 import { TABLE_STYLE, TD_STYLE, TH_STYLE } from "./table-styles";
+import type { SearchState } from "./use-search-query";
 
 const SECTION_TITLE_STYLE: React.CSSProperties = {
   fontSize: 14,
@@ -54,12 +79,12 @@ const BLOCK_TITLE_STYLE: React.CSSProperties = {
 const PENDING_STYLE: React.CSSProperties = { color: "var(--textColorSecondary, #9aa0a6)", fontSize: 12 };
 
 const FETCH_FAILED_LABEL = "Fetch failed";
-const RESOLUTION_FAILED_LABEL = "Resolution failed";
 
 interface SectionContext {
   data: ClusterOciData;
   region: string | undefined;
   clusterKey: string;
+  query: string;
 }
 
 /** LB/NLBの行集合が確定したか(クラスタ関連判定にタグ検索も要る)。 */
@@ -121,7 +146,7 @@ function SlBlock({ ctx, slId }: { ctx: SectionContext; slId: string }) {
   const result = ctx.data.securityLists[slId];
   return (
     <NamedDetailBlock
-      label={`Security List: ${result?.ok ? (result.data["display-name"] ?? slId) : slId}`}
+      label={`Security List: ${displayNameOrOcid(result, slId, (sl) => sl["display-name"])}`}
       ocid={slId}
       actions={
         ctx.region &&
@@ -154,7 +179,7 @@ function RtBlock({ ctx, rtId }: { ctx: SectionContext; rtId: string }) {
   const result = ctx.data.routeTables[rtId];
   return (
     <NamedDetailBlock
-      label={`Route Table: ${result?.ok ? (result.data["display-name"] ?? rtId) : rtId}`}
+      label={`Route Table: ${displayNameOrOcid(result, rtId, (rt) => rt["display-name"])}`}
       ocid={rtId}
       actions={
         ctx.region &&
@@ -178,7 +203,7 @@ function NsgBlock({ ctx, nsgId }: { ctx: SectionContext; nsgId: string }) {
   const result = ctx.data.nsgs[nsgId];
   return (
     <NamedDetailBlock
-      label={`NSG: ${result?.ok ? (result.data.nsg["display-name"] ?? nsgId) : nsgId}`}
+      label={`NSG: ${displayNameOrOcid(result, nsgId, (nsg) => nsg.nsg["display-name"])}`}
       ocid={nsgId}
       actions={
         ctx.region &&
@@ -249,16 +274,14 @@ function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
   return (
     <div>
       {lb.listeners.length > 0 && (
-        <div style={{ fontSize: 12, marginBottom: 4 }}>
-          listener: {lb.listeners.map((l) => `${l.name}(${l.protocol ?? "-"}:${l.port ?? "-"})`).join(", ")}
-        </div>
+        <div style={{ fontSize: 12, marginBottom: 4 }}>listener: {lb.listeners.map(listenerLabel).join(", ")}</div>
       )}
       {lb.managedCertificateIds.map((certId) => {
         const result = ctx.data.managedCerts[certId];
         return (
           <div key={certId} style={{ fontSize: 12, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
             <span>
-              Certificate {result?.ok ? (result.data.name ?? certId) : certId}: expires{" "}
+              Certificate {displayNameOrOcid(result, certId, (cert) => cert.name)}: expires{" "}
               {result?.ok && result.data.validTo ? new Date(result.data.validTo).toLocaleDateString() : "-"}
             </span>
             {result?.ok ? (
@@ -293,8 +316,37 @@ function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
   );
 }
 
+function lbValuesOf(ctx: SectionContext, lb: LbRow): SearchValues {
+  return lbSearchValues(lb, {
+    nsgs: ctx.data.nsgs,
+    managedCerts: ctx.data.managedCerts,
+    backendHealthOf: (name) => ctx.data.backendHealths[backendHealthKey(lb.kind, lb.id, name)],
+  });
+}
+
+/** 検索語がある間だけ全LB行分を先行取得する: onExpand経由だけでは未展開行のbackend healthが検索に載らない。 */
+function usePrefetchBackendHealth(ctx: SectionContext, lbRows: LbRow[]): void {
+  const searching = ctx.query.trim().length > 0;
+  const { clusterKey } = ctx;
+  // 行集合の同値判定に使う。lbRowsは毎レンダー新しい配列で来るため参照では比較できない。
+  const rowsKey = lbRows.map((lb) => `${lb.kind}:${lb.id}:${lb.backendSetNames.join(",")}`).join("|");
+  const lbRowsRef = React.useRef(lbRows);
+  lbRowsRef.current = lbRows;
+  // biome-ignore lint/correctness/useExhaustiveDependencies(rowsKey): 行集合の変化はこのキーで見る
+  React.useEffect(() => {
+    if (!searching) return;
+    for (const lb of lbRowsRef.current) {
+      for (const name of lb.backendSetNames) {
+        ociClusterStore.ensureBackendHealth(clusterKey, lb.kind, lb.id, name);
+      }
+    }
+  }, [searching, rowsKey, clusterKey]);
+}
+
 function LbSection({ ctx, lbRows }: { ctx: SectionContext; lbRows: LbRow[] }) {
   const columns = 7;
+  const rows = filterRows(lbRows, ctx.query, (lb) => allSearchValues(lbValuesOf(ctx, lb)));
+  usePrefetchBackendHealth(ctx, lbRows);
   return (
     <section>
       <div style={SECTION_TITLE_STYLE}>LB / NLB</div>
@@ -308,6 +360,8 @@ function LbSection({ ctx, lbRows }: { ctx: SectionContext; lbRows: LbRow[] }) {
         <LoadingBlock />
       ) : lbRows.length === 0 ? (
         <EmptyState message="No LB / NLB" />
+      ) : rows.length === 0 ? (
+        <EmptyState message={`No LB / NLB match "${ctx.query}"`} />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
@@ -323,10 +377,11 @@ function LbSection({ ctx, lbRows }: { ctx: SectionContext; lbRows: LbRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {lbRows.map((lb) => (
+            {rows.map((lb) => (
               <ExpandableRow
                 key={lb.id}
                 colSpan={columns}
+                forceExpanded={matchedOnlyInDetail(ctx.query, lbValuesOf(ctx, lb))}
                 onExpand={() => {
                   for (const name of lb.backendSetNames) {
                     ociClusterStore.ensureBackendHealth(ctx.clusterKey, lb.kind, lb.id, name);
@@ -336,9 +391,9 @@ function LbSection({ ctx, lbRows }: { ctx: SectionContext; lbRows: LbRow[] }) {
                 cells={
                   <>
                     <td style={TD_STYLE}>{lb.displayName ?? "-"}</td>
-                    <td style={TD_STYLE}>{lb.kind === "nlb" ? "NLB" : "classic"}</td>
+                    <td style={TD_STYLE}>{lbKindLabel(lb.kind)}</td>
                     <td style={TD_STYLE}>{lb.ips.join(", ") || "-"}</td>
-                    <td style={TD_STYLE}>{lb.isPrivate === undefined ? "-" : lb.isPrivate ? "private" : "public"}</td>
+                    <td style={TD_STYLE}>{lbVisibilityLabel(lb.isPrivate)}</td>
                     <td style={TD_STYLE}>
                       <LifecycleBadge state={lb.lifecycleState} />
                     </td>
@@ -373,7 +428,13 @@ function SubnetDetail({ ctx, subnet }: { ctx: SectionContext; subnet: SubnetRow 
   );
 }
 
-const ROLE_LABEL: Record<string, string> = { lb: "LB", node: "Node", endpoint: "endpoint" };
+function subnetValuesOf(ctx: SectionContext, subnet: SubnetRow): SearchValues {
+  return subnetSearchValues(subnet, {
+    securityLists: ctx.data.securityLists,
+    routeTables: ctx.data.routeTables,
+    gateways: ctx.data.gateways,
+  });
+}
 
 function SubnetSection({
   ctx,
@@ -389,6 +450,8 @@ function SubnetSection({
   extraNsgIds?: string[];
 }) {
   const columns = 6;
+  const visibleRows = filterRows(rows, ctx.query, (subnet) => allSearchValues(subnetValuesOf(ctx, subnet)));
+  const visibleNsgIds = filterRows(extraNsgIds ?? [], ctx.query, (nsgId) => nsgSearchValues(nsgId, ctx.data.nsgs));
   return (
     <section>
       <div style={SECTION_TITLE_STYLE}>{title}</div>
@@ -397,6 +460,8 @@ function SubnetSection({
         <LoadingBlock />
       ) : rows.length === 0 ? (
         <EmptyState message="No target subnets" />
+      ) : visibleRows.length === 0 ? (
+        <EmptyState message={`No subnets match "${ctx.query}"`} />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
@@ -411,23 +476,18 @@ function SubnetSection({
             </tr>
           </thead>
           <tbody>
-            {rows.map((subnet) => (
+            {visibleRows.map((subnet) => (
               <ExpandableRow
                 key={subnet.subnetId}
                 colSpan={columns}
+                forceExpanded={matchedOnlyInDetail(ctx.query, subnetValuesOf(ctx, subnet))}
                 renderDetail={() => <SubnetDetail ctx={ctx} subnet={subnet} />}
                 cells={
                   <>
                     <td style={TD_STYLE}>{subnet.displayName ?? subnet.subnetId}</td>
                     <td style={TD_STYLE}>{subnet.cidrBlock ?? "-"}</td>
-                    <td style={TD_STYLE}>{subnet.roles.map((role) => ROLE_LABEL[role]).join(" / ") || "-"}</td>
-                    <td style={TD_STYLE}>
-                      {subnet.prohibitPublicIpOnVnic === undefined
-                        ? "-"
-                        : subnet.prohibitPublicIpOnVnic
-                          ? "Prohibited"
-                          : "Allowed"}
-                    </td>
+                    <td style={TD_STYLE}>{subnetRoleLabel(subnet.roles)}</td>
+                    <td style={TD_STYLE}>{subnetPublicIpLabel(subnet.prohibitPublicIpOnVnic)}</td>
                     <td style={TD_STYLE}>
                       <OcidCopyButton ocid={subnet.subnetId} />
                     </td>
@@ -448,7 +508,7 @@ function SubnetSection({
           </tbody>
         </table>
       )}
-      {(extraNsgIds ?? []).map((nsgId) => (
+      {visibleNsgIds.map((nsgId) => (
         <NsgBlock key={nsgId} ctx={ctx} nsgId={nsgId} />
       ))}
     </section>
@@ -460,7 +520,7 @@ function WafPolicyDetail({ ctx, policyId }: { ctx: SectionContext; policyId: str
   const result = ctx.data.wafPolicies[policyId];
   return (
     <NamedDetailBlock
-      label={`Policy: ${result?.ok ? result.data["display-name"] : policyId}`}
+      label={`Policy: ${displayNameOrOcid(result, policyId, (policy) => policy["display-name"])}`}
       ocid={policyId}
       actions={ctx.region && <ConsoleButton type="waf-policy" ocid={policyId} region={ctx.region} />}
       result={result}
@@ -502,11 +562,42 @@ function WafPolicyDetail({ ctx, policyId }: { ctx: SectionContext; policyId: str
   );
 }
 
-const DNS_MATCH_BADGE: Record<DnsMatchKind, { label: string; tone: "success" | "error" | "neutral" }> = {
-  matched: { label: "Matched", tone: "success" },
-  unmatched: { label: "Mismatched", tone: "error" },
-  unresolved: { label: "Unresolved", tone: "error" },
+const DNS_MATCH_TONE: Record<DnsMatchKind, StatusTone> = {
+  matched: "success",
+  unmatched: "error",
+  unresolved: "error",
 };
+
+/** 解決待ち(pending)を含むDNS行。検索対象はDnsRowの値のみ。 */
+interface DnsSectionRow extends DnsRow {
+  pending: boolean;
+  tone?: StatusTone;
+}
+
+function dnsSectionRow(host: string, ctx: SectionContext, lbRows: LbRow[]): DnsSectionRow {
+  const result = ctx.data.dnsChecks[host];
+  if (!result) return { host, resolvedIps: [], matchedLbNames: [], pending: true };
+  if (!result.ok) {
+    return {
+      host,
+      resolvedIps: [],
+      matchedLbNames: [],
+      pending: false,
+      statusLabel: RESOLUTION_FAILED_LABEL,
+      errorMessage: `${RESOLUTION_FAILED_LABEL}: ${result.raw.message}`,
+      tone: "neutral",
+    };
+  }
+  const match = matchDnsToLbs(result.data, lbRows);
+  return {
+    host,
+    resolvedIps: result.data,
+    matchedLbNames: match.matchedLbNames,
+    pending: false,
+    statusLabel: DNS_MATCH_LABEL[match.kind],
+    tone: DNS_MATCH_TONE[match.kind],
+  };
+}
 
 function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
   // 行の集合はK8s側から直に導く(dnsChecksの登録待ちで「該当なし」を先に出さないため)。
@@ -516,6 +607,11 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
       ...Object.keys(ctx.data.dnsChecks),
     ]),
   ].sort();
+  const rows = filterRows(
+    hosts.map((host) => dnsSectionRow(host, ctx, view.lbRows)),
+    ctx.query,
+    dnsSearchValues,
+  );
   return (
     <section>
       <div style={SECTION_TITLE_STYLE}>DNS</div>
@@ -525,6 +621,8 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
       </div>
       {hosts.length === 0 ? (
         <EmptyState message="No hostnames to check (no Ingress / external-dns annotations)" />
+      ) : rows.length === 0 ? (
+        <EmptyState message={`No hostnames match "${ctx.query}"`} />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
@@ -536,30 +634,27 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
             </tr>
           </thead>
           <tbody>
-            {hosts.map((host) => {
-              const result = ctx.data.dnsChecks[host];
-              if (!result?.ok) {
+            {rows.map((row) => {
+              if (row.pending || row.errorMessage) {
                 return (
-                  <tr key={host}>
-                    <td style={TD_STYLE}>{host}</td>
+                  <tr key={row.host}>
+                    <td style={TD_STYLE}>{row.host}</td>
                     <td style={TD_STYLE} colSpan={2}>
-                      {result ? `${RESOLUTION_FAILED_LABEL}: ${result.raw.message}` : <Spinner size={12} />}
+                      {row.errorMessage ?? <Spinner size={12} />}
                     </td>
                     <td style={TD_STYLE}>
-                      {result ? <StatusBadge label={RESOLUTION_FAILED_LABEL} tone="neutral" /> : "-"}
+                      {row.statusLabel && row.tone ? <StatusBadge label={row.statusLabel} tone={row.tone} /> : "-"}
                     </td>
                   </tr>
                 );
               }
-              const match = matchDnsToLbs(result.data, view.lbRows);
-              const badge = DNS_MATCH_BADGE[match.kind];
               return (
-                <tr key={host}>
-                  <td style={TD_STYLE}>{host}</td>
-                  <td style={TD_STYLE}>{result.data.join(", ") || "-"}</td>
-                  <td style={TD_STYLE}>{match.matchedLbNames.join(", ") || "-"}</td>
+                <tr key={row.host}>
+                  <td style={TD_STYLE}>{row.host}</td>
+                  <td style={TD_STYLE}>{row.resolvedIps.join(", ") || "-"}</td>
+                  <td style={TD_STYLE}>{row.matchedLbNames.join(", ") || "-"}</td>
                   <td style={TD_STYLE}>
-                    <StatusBadge label={badge.label} tone={badge.tone} />
+                    {row.statusLabel && row.tone && <StatusBadge label={row.statusLabel} tone={row.tone} />}
                   </td>
                 </tr>
               );
@@ -571,8 +666,13 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
   );
 }
 
+function wafValuesOf(ctx: SectionContext, waf: WafRow): SearchValues {
+  return wafSearchValues(waf, ctx.data.wafPolicies);
+}
+
 function WafSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
   const columns = 5;
+  const rows = filterRows(view.wafRows, ctx.query, (waf) => allSearchValues(wafValuesOf(ctx, waf)));
   return (
     <section>
       <div style={SECTION_TITLE_STYLE}>WAF</div>
@@ -586,6 +686,8 @@ function WafSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
         <LoadingBlock />
       ) : view.wafRows.length === 0 ? (
         <EmptyState message="No WAF attached to this cluster's classic LBs" />
+      ) : rows.length === 0 ? (
+        <EmptyState message={`No WAF match "${ctx.query}"`} />
       ) : (
         <table style={TABLE_STYLE}>
           <thead>
@@ -599,10 +701,11 @@ function WafSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
             </tr>
           </thead>
           <tbody>
-            {view.wafRows.map((waf) => (
+            {rows.map((waf) => (
               <ExpandableRow
                 key={waf.id}
                 colSpan={columns}
+                forceExpanded={matchedOnlyInDetail(ctx.query, wafValuesOf(ctx, waf))}
                 renderDetail={() => <WafPolicyDetail ctx={ctx} policyId={waf.policyId} />}
                 cells={
                   <>
@@ -634,11 +737,13 @@ export interface NetworkTabProps {
   data: ClusterOciData;
   region: string | undefined;
   clusterKey: string;
+  search: SearchState;
 }
 
 /** 経路軸(外→内)のセクション重ね: WAF → LB/NLB → LBサブネット → ノードサブネット → endpoint。 */
-export const NetworkTab = observer(function NetworkTab({ data, region, clusterKey }: NetworkTabProps) {
-  const ctx: SectionContext = { data, region, clusterKey };
+export const NetworkTab = observer(function NetworkTab({ data, region, clusterKey, search }: NetworkTabProps) {
+  const { query, setQuery } = search;
+  const ctx: SectionContext = { data, region, clusterKey, query };
   // compartment内の全LBではなくクラスタ関連LBのみ表示する(タグ + Service IP + バックエンド連鎖)
   const lbIds = clusterLbIds(
     data,
@@ -648,6 +753,7 @@ export const NetworkTab = observer(function NetworkTab({ data, region, clusterKe
   const view = buildNetworkView(data, lbIds);
   return (
     <div>
+      <SearchBar query={query} onChange={setQuery} placeholder="Search DNS / WAF / LB / subnet (incl. expanded rows)" />
       <DnsSection ctx={ctx} view={view} />
       <WafSection ctx={ctx} view={view} />
       <LbSection ctx={ctx} lbRows={view.lbRows} />

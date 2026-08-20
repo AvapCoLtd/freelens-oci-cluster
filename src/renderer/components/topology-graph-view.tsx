@@ -29,6 +29,7 @@ import {
 } from "../match/topology-flow";
 import { TOPOLOGY_EDGE_KINDS, type TopologyEdgeKind } from "../match/topology-graph";
 import type { TopologyPoint } from "../match/topology-layout";
+import { matchTopologyNodes } from "../match/topology-search";
 import type { InjectedStyle } from "./injected-style";
 
 /** React Flow本体のスタイル。既存流儀に合わせてJS内文字列として注入する。 */
@@ -299,25 +300,48 @@ function highlightOf(
   return { nodeIds: withAncestors(nodes, nodeIds), edgeIds };
 }
 
-/** 強調対象でない要素だけ新しいオブジェクトにする(同一参照のノードはReact Flowが再描画を省く)。 */
-function applyHighlight(nodes: Node[], edges: Edge[], highlight: Highlight | undefined) {
+/** 検索マッチとその親、マッチノードに接続するエッジ(片端がマッチなら残す)。 */
+function searchHighlightOf(nodes: Node[], edges: Edge[], matched: ReadonlySet<string>): Highlight {
+  const edgeIds = new Set<string>();
+  for (const edge of edges) {
+    if (matched.has(edge.source) || matched.has(edge.target)) edgeIds.add(edge.id);
+  }
+  return { nodeIds: withAncestors(nodes, matched), edgeIds };
+}
+
+/**
+ * 強調対象でない要素だけ新しいオブジェクトにする(同一参照のノードはReact Flowが再描画を省く)。
+ * focusとsearchが同時にあるときはfocusだけを見る(重ねるとホバー先まで減光したままになる)。
+ */
+function applyHighlight(nodes: Node[], edges: Edge[], focus: Highlight | undefined, search: Highlight | undefined) {
+  const highlight = focus ?? search;
   if (!highlight) return { nodes, edges };
   return {
     nodes: nodes.map((node) =>
       highlight.nodeIds.has(node.id) ? node : { ...node, style: { ...node.style, opacity: DIM_NODE_OPACITY } },
     ),
-    edges: edges.map((edge) =>
-      highlight.edgeIds.has(edge.id)
-        ? {
-            ...edge,
-            zIndex: ACCENT_EDGE_Z_INDEX,
-            style: { ...edge.style, stroke: ACCENT_COLOR, strokeOpacity: 1, strokeWidth: 2 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: ACCENT_COLOR },
-          }
-        : { ...edge, style: { ...edge.style, opacity: DIM_OPACITY } },
-    ),
+    edges: edges.map((edge) => {
+      if (!highlight.edgeIds.has(edge.id)) return { ...edge, style: { ...edge.style, opacity: DIM_OPACITY } };
+      // 検索マッチのエッジは種別色のまま残す(色を変えると凡例と対応が取れなくなる)。
+      if (!focus) return edge;
+      return {
+        ...edge,
+        zIndex: ACCENT_EDGE_Z_INDEX,
+        style: { ...edge.style, stroke: ACCENT_COLOR, strokeOpacity: 1, strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: ACCENT_COLOR },
+      };
+    }),
   };
 }
+
+const NO_MATCH_STYLE: React.CSSProperties = {
+  border: `1px solid ${BORDER_COLOR}`,
+  borderRadius: 4,
+  background: "var(--mainBackground, #1e2124)",
+  padding: "6px 10px",
+  fontSize: 12,
+  color: SECONDARY_COLOR,
+};
 
 const LEGEND_STYLE: React.CSSProperties = {
   display: "flex",
@@ -364,10 +388,12 @@ function EdgeLegend({ kinds }: { kinds: readonly TopologyEdgeKind[] }) {
 
 export interface TopologyGraphViewProps {
   flow: TopologyFlow;
+  /** マッチしないノード・エッジを減光する検索語。空文字は減光なし */
+  searchQuery: string;
   onSelectNode: (id: string | undefined) => void;
 }
 
-export function TopologyGraphView({ flow, onSelectNode }: TopologyGraphViewProps) {
+export function TopologyGraphView({ flow, searchQuery, onSelectNode }: TopologyGraphViewProps) {
   const elements = React.useMemo(() => ({ nodes: toFlowNodes(flow), edges: toFlowEdges(flow) }), [flow]);
   // 凡例は図に実在する種別だけ挙げる。使われていない色を並べると対応付けの手がかりが増えない。
   const legendKinds = React.useMemo(() => {
@@ -390,9 +416,24 @@ export function TopologyGraphView({ flow, onSelectNode }: TopologyGraphViewProps
     setFocusedNodeId(undefined);
   }, [elements, setNodes, setEdges]);
 
+  const matched = React.useMemo(
+    () => (searchQuery.trim().length === 0 ? undefined : matchTopologyNodes(flow.nodes, searchQuery)),
+    [flow, searchQuery],
+  );
+  const searchHighlight = React.useMemo(
+    () => (matched ? searchHighlightOf(nodes, edges, matched) : undefined),
+    [matched, nodes, edges],
+  );
+
   const view = React.useMemo(
-    () => applyHighlight(nodes, edges, highlightOf(nodes, edges, hoveredNodeId ?? focusedNodeId, hoveredEdgeId)),
-    [nodes, edges, hoveredNodeId, focusedNodeId, hoveredEdgeId],
+    () =>
+      applyHighlight(
+        nodes,
+        edges,
+        highlightOf(nodes, edges, hoveredNodeId ?? focusedNodeId, hoveredEdgeId),
+        searchHighlight,
+      ),
+    [nodes, edges, hoveredNodeId, focusedNodeId, hoveredEdgeId, searchHighlight],
   );
 
   return (
@@ -424,6 +465,9 @@ export function TopologyGraphView({ flow, onSelectNode }: TopologyGraphViewProps
     >
       <Background />
       <Controls showInteractive={false} />
+      {matched?.size === 0 && (
+        <Panel position="top-center" style={NO_MATCH_STYLE}>{`No nodes match "${searchQuery}"`}</Panel>
+      )}
       <EdgeLegend kinds={legendKinds} />
     </ReactFlow>
   );

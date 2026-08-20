@@ -6,7 +6,9 @@ export function OciNetworkPage() {
   return (
     <OciPageShell
       page="network"
-      renderLoaded={(data, region, clusterKey) => <NetworkTab data={data} region={region} clusterKey={clusterKey} />}
+      renderLoaded={(data, region, clusterKey, search) => (
+        <NetworkTab data={data} region={region} clusterKey={clusterKey} search={search} />
+      )}
     />
   );
 }

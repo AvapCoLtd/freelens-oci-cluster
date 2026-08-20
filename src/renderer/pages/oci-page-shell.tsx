@@ -5,6 +5,7 @@ import { FatalErrorGuidance, NonOkeGuidance } from "../components/error-guidance
 import { OciHeader } from "../components/oci-header";
 import { PollingToggle } from "../components/polling-toggle";
 import { Spinner } from "../components/spinner";
+import { type SearchState, useSearchQuery } from "../components/use-search-query";
 import type { ClusterOciData } from "../fetch/fetch";
 import { buildHeaderInfo } from "../match/header-info";
 import { extractRegionFromOcid } from "../match/ocid-region";
@@ -36,7 +37,12 @@ const CENTER_STYLE: React.CSSProperties = {
 
 export interface OciPageShellProps {
   page: OciPage;
-  renderLoaded: (data: ClusterOciData, region: string | undefined, clusterKey: string) => React.ReactNode;
+  renderLoaded: (
+    data: ClusterOciData,
+    region: string | undefined,
+    clusterKey: string,
+    search: SearchState,
+  ) => React.ReactNode;
 }
 
 // clusterPagesで個別ページ登録される側(oci-nodes-page.tsx等)はhostがobserver()で包むため
@@ -44,6 +50,8 @@ export interface OciPageShellProps {
 // host側の二重ラップの対象にならないため、mobxの状態読み取りのため自前でobserver()する。
 export const OciPageShell = observer(function OciPageShell({ page, renderLoaded }: OciPageShellProps) {
   const { clusterKey } = useOciPageState(page);
+  // 検索語はシェル側で持つ: renderLoadedの中に置くと再取得(loaded→fetching)で消える。
+  const search = useSearchQuery(clusterKey);
 
   if (!clusterKey) {
     return <div style={{ padding: 16 }}>No active cluster</div>;
@@ -76,7 +84,7 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
           />
         );
       case "loaded":
-        return renderLoaded(state.data, region, clusterKey);
+        return renderLoaded(state.data, region, clusterKey, search);
     }
   })();
 

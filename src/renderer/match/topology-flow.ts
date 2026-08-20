@@ -80,6 +80,8 @@ export interface TopologyFlowNodeData {
   label: string;
   /** コンテナのCIDR。1行に収める都合で先頭CIDR + 残り件数に省略する(全量は詳細パネル) */
   sublabel?: string;
+  /** 検索だけに使う詳細値(OCID・IP・State等)。描画には出さない */
+  searchText: string[];
   status: TopologyNodeStatus;
   /** クリックで展開する集約ノードか */
   expandable: boolean;
@@ -137,6 +139,7 @@ function dataOf(node: TopologyNode): TopologyFlowNodeData {
     kindLabel: NODE_KIND_LABEL[node.kind],
     label: node.label,
     sublabel: container ? cidrSublabel(node) : undefined,
+    searchText: node.detail.map((row) => row.value),
     status: node.status ?? "unknown",
     expandable: node.kind === "instance-group",
   };
@@ -145,6 +148,7 @@ function dataOf(node: TopologyNode): TopologyFlowNodeData {
 const UNPLACED_DATA: TopologyFlowNodeData = {
   variant: "container",
   label: UNPLACED_LABEL,
+  searchText: [],
   status: "unknown",
   expandable: false,
 };

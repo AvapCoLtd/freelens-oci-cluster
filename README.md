@@ -62,6 +62,9 @@ FreeLens 1.10.3(Extension API 1.10.3、Windows x64)で動作確認済み。
 - **Topology**: クラスタ関連リソースの位置と繋がりを一枚の図で表示。設計判断は
   [docs/design.md](docs/design.md#topology-図の設計判断) を参照
 
+各ページに絞り込み検索バーがある。展開領域(セキュリティルール・backend health 等)の値にしかマッチしない行は自動展開される。
+Topology では該当ノード・エッジ以外を減光する。
+
 各ページのヘッダにあるトグルで自動更新を有効化できる(間隔は Preferences で変更可、既定60秒)。
 
 閲覧専用。

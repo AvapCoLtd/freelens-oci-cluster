@@ -62,6 +62,9 @@ Main features per page.
 - **Topology**: a single diagram showing the position and connections of cluster-related resources. See
   [docs/design.md](docs/design.md#topology-図の設計判断) for design rationale
 
+Each page has a filter search bar. Rows that only match on values inside the expandable detail area (security rules,
+backend health, etc.) are auto-expanded. In Topology, non-matching nodes and edges are dimmed instead.
+
 A toggle in each page header enables auto-refresh (the interval is configurable in Preferences, 60 seconds by default).
 
 It is read-only.

@@ -140,7 +140,7 @@ export interface OciRouteTable {
     destination?: string;
     "cidr-block"?: string | null;
     "network-entity-id"?: string;
-    description?: string;
+    description?: string | null;
   }[];
 }
 

@@ -32,3 +32,13 @@ export interface ButtonProps {
   onClick?: (event: React.MouseEvent) => void;
 }
 export const Button = Renderer.Component.Button as unknown as React.ComponentType<ButtonProps>;
+
+export interface SearchInputProps {
+  value?: string;
+  onChange?: (value: string) => void;
+  placeholder?: string;
+  compact?: boolean;
+  showClearIcon?: boolean;
+  onClear?: () => void;
+}
+export const SearchInput = Renderer.Component.SearchInput as unknown as React.ComponentType<SearchInputProps>;

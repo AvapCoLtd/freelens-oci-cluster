@@ -4,10 +4,12 @@ import * as React from "react";
 import { FatalErrorGuidance, NonOkeGuidance } from "../components/error-guidance";
 import { OciHeader } from "../components/oci-header";
 import { PollingToggle } from "../components/polling-toggle";
+import { SearchBar } from "../components/search-bar";
 import { TopologyDetailPanel } from "../components/topology-detail-panel";
 import { TopologyGraphView } from "../components/topology-graph-view";
 import { TopologyMissingBanner } from "../components/topology-missing-banner";
 import { TopologyProgress } from "../components/topology-progress";
+import { type SearchState, useSearchQuery } from "../components/use-search-query";
 import { buildHeaderInfo } from "../match/header-info";
 import type { TopologySection } from "../match/page-sections";
 import { toTopologyFlow } from "../match/topology-flow";
@@ -35,6 +37,8 @@ const GUIDANCE_STYLE: React.CSSProperties = { padding: 16, overflow: "auto" };
 
 const CANVAS_ROW_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, display: "flex" };
 
+const SEARCH_ROW_STYLE: React.CSSProperties = { flexShrink: 0, padding: "8px 12px 0" };
+
 /**
  * K8s側の入力は毎レンダー新しい配列で返るため、内容が変わらない限り同じ参照を返す。
  * これが無いと図の再導出がレンダーのたびに走る。
@@ -53,13 +57,21 @@ export function OciTopologyPage() {
 
 const TopologyPage = observer(function TopologyPage() {
   const { clusterKey } = useOciPageState("topology");
+  // 検索語はページ側で持つ: 図の描画側に置くと再取得で本文が差し替わったときに消える。
+  const search = useSearchQuery(clusterKey);
   if (!clusterKey) {
     return <div style={{ padding: 16 }}>No active cluster</div>;
   }
-  return <TopologyPageContent clusterKey={clusterKey} />;
+  return <TopologyPageContent clusterKey={clusterKey} search={search} />;
 });
 
-const TopologyPageContent = observer(function TopologyPageContent({ clusterKey }: { clusterKey: string }) {
+const TopologyPageContent = observer(function TopologyPageContent({
+  clusterKey,
+  search,
+}: {
+  clusterKey: string;
+  search: SearchState;
+}) {
   const state = ociClusterStore.getState(clusterKey, "topology");
   const snapshot = ociClusterStore.getTopologySnapshot(clusterKey);
   const progress = ociClusterStore.getTopologyProgress(clusterKey);
@@ -68,6 +80,7 @@ const TopologyPageContent = observer(function TopologyPageContent({ clusterKey }
 
   const [expandedSubnetIds, setExpandedSubnetIds] = React.useState<ReadonlySet<string>>(() => new Set<string>());
   const [selectedId, setSelectedId] = React.useState<string | undefined>(undefined);
+  const { query, setQuery } = search;
 
   const generation = snapshot?.generation;
   const snapshotRef = React.useRef(snapshot);
@@ -136,9 +149,12 @@ const TopologyPageContent = observer(function TopologyPageContent({ clusterKey }
         return (
           <>
             <TopologyMissingBanner missing={view.missing} data={view.data} />
+            <div style={SEARCH_ROW_STYLE}>
+              <SearchBar query={query} onChange={setQuery} placeholder="Search nodes" />
+            </div>
             <div style={CANVAS_ROW_STYLE}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <TopologyGraphView flow={view.flow} onSelectNode={handleSelectNode} />
+                <TopologyGraphView flow={view.flow} searchQuery={query} onSelectNode={handleSelectNode} />
               </div>
               {selectedNode && <TopologyDetailPanel node={selectedNode} onClose={() => setSelectedId(undefined)} />}
             </div>

@@ -308,6 +308,11 @@ function statusOf(lifecycleState: string | undefined): TopologyNodeStatus {
   return isAbnormalLifecycleState(lifecycleState) ? "warning" : "ok";
 }
 
+/** 集約ノードに畳んだInstance 1件分の値(表示・検索とも改行区切りの1エントリで持つ)。 */
+function memberDetailValue(member: TopologyNode): string {
+  return [...new Set([member.label, ...member.detail.map((row) => row.value)])].join("\n");
+}
+
 function detailOf(rows: (TopologyDetail | undefined)[]): TopologyDetail[] {
   return rows.filter((row): row is TopologyDetail => !!row && row.value !== "");
 }
@@ -776,6 +781,7 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
       .filter((instance) => nodeById.get(instance.id)?.parentId === subnetId)
       .map((instance) => instance.id);
     if (memberIds.length <= AGGREGATE_THRESHOLD) continue;
+    const members = memberIds.map((memberId) => nodeById.get(memberId)).filter((node) => node !== undefined);
     for (const memberId of memberIds) nodeById.delete(memberId);
     const groupId = `instance-group:${subnetId}`;
     for (const memberId of memberIds) groupOf.set(memberId, groupId);
@@ -785,7 +791,11 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
       label: `${memberIds.length} nodes`,
       parentId: subnetId,
       status: "unknown",
-      detail: [{ label: "Instances", value: String(memberIds.length) }],
+      detail: [
+        { label: "Instances", value: String(memberIds.length) },
+        // 畳んだInstanceの値を持たせない場合、その名前・OCIDで集約ノードを検索できなくなる。
+        ...members.map((member) => ({ label: "Member", value: memberDetailValue(member) })),
+      ],
       memberIds,
       count: memberIds.length,
     });

@@ -11,6 +11,8 @@ export interface ExpandableRowProps {
   colSpan: number;
   onExpand?: () => void;
   rowStyle?: React.CSSProperties;
+  /** trueに変わった時点で展開する(以後はユーザー操作が優先。falseに戻ると強制前の開閉状態へ復元)。 */
+  forceExpanded?: boolean;
 }
 
 const DETAIL_CELL_STYLE: React.CSSProperties = {
@@ -42,13 +44,28 @@ const INTERACTIVE_SELECTOR = "button, a, input, i, svg, [role='button']";
  * 行クリックで直下に詳細を挿入する行。展開状態はローカルstate(storeに持たない)。
  * キーボード操作は行頭の展開ボタンが担う(行のonClickはマウス向けの補助)。
  */
-export function ExpandableRow({ cells, renderDetail, colSpan, onExpand, rowStyle }: ExpandableRowProps) {
-  const [expanded, setExpanded] = React.useState(false);
-  const toggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    if (next) onExpand?.();
-  };
+export function ExpandableRow({
+  cells,
+  renderDetail,
+  colSpan,
+  onExpand,
+  rowStyle,
+  forceExpanded = false,
+}: ExpandableRowProps) {
+  const [expanded, setExpanded] = React.useState(forceExpanded);
+  const [forcing, setForcing] = React.useState({ on: forceExpanded, before: false });
+  if (forcing.on !== forceExpanded) {
+    // useEffectに移さない: 強制の切り替わり前の開閉状態で1フレーム描画してしまう。
+    setForcing({ on: forceExpanded, before: forceExpanded ? expanded : false });
+    setExpanded(forceExpanded ? true : forcing.before);
+  }
+  // falseで初期化する: 初回描画から展開済み(forceExpanded)の行でもonExpandを1回起こす。
+  const previousExpanded = React.useRef(false);
+  React.useEffect(() => {
+    if (expanded && !previousExpanded.current) onExpand?.();
+    previousExpanded.current = expanded;
+  }, [expanded, onExpand]);
+  const toggle = () => setExpanded(!expanded);
   const onRowClick = (event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
     toggle();
