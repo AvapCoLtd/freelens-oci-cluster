@@ -2,6 +2,7 @@ import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type { ClusterOciData } from "../fetch/fetch";
 import { filterRows } from "../match/filter-rows";
+import { ocpuMemoryText } from "../match/instance-shape";
 import { nodePoolNameOfInstance } from "../match/node-pool";
 import { parseProviderId } from "../match/provider-id";
 import { sectionsReady } from "../match/section-ready";
@@ -28,7 +29,7 @@ function findInstance(instances: OciInstance[], instanceId: string | undefined):
   return instanceId ? instances.find((i) => i.id === instanceId) : undefined;
 }
 
-type NodeColumn = "node" | "instance" | "pool" | "shape" | "adFd" | "lifecycle" | "ready";
+type NodeColumn = "node" | "instance" | "pool" | "shape" | "shapeConfig" | "adFd" | "lifecycle" | "ready";
 
 interface NodeRow {
   key: string;
@@ -43,6 +44,7 @@ const SORT_VALUE: Record<NodeColumn, (row: NodeRow) => string | number | undefin
   instance: (row) => row.instance?.["display-name"],
   pool: (row) => row.poolName,
   shape: (row) => row.instance?.shape,
+  shapeConfig: (row) => row.instance?.["shape-config"]?.ocpus,
   adFd: (row) =>
     row.instance ? `${row.instance["availability-domain"] ?? ""} / ${row.instance["fault-domain"] ?? ""}` : undefined,
   lifecycle: (row) => row.instance?.["lifecycle-state"],
@@ -56,6 +58,7 @@ function searchValuesOf(row: NodeRow): (string | number | undefined)[] {
     row.instance?.["display-name"],
     row.poolName,
     row.instance?.shape,
+    ocpuMemoryText(row.instance),
     row.instance ? `${row.instance["availability-domain"] ?? ""} / ${row.instance["fault-domain"] ?? ""}` : undefined,
     row.instance?.["lifecycle-state"],
   ];
@@ -121,6 +124,9 @@ export const NodeTab = observer(function NodeTab({ data, region, search }: NodeT
               <SortableHeaderCell column="shape" sort={sort} onSort={toggleSort}>
                 Shape
               </SortableHeaderCell>
+              <SortableHeaderCell column="shapeConfig" sort={sort} onSort={toggleSort}>
+                OCPU / Memory
+              </SortableHeaderCell>
               <SortableHeaderCell column="adFd" sort={sort} onSort={toggleSort}>
                 AD / FD
               </SortableHeaderCell>
@@ -141,6 +147,7 @@ export const NodeTab = observer(function NodeTab({ data, region, search }: NodeT
                 <td style={TD_STYLE}>{instance?.["display-name"] ?? "-"}</td>
                 <td style={TD_STYLE}>{poolName ?? "-"}</td>
                 <td style={TD_STYLE}>{instance?.shape ?? "-"}</td>
+                <td style={TD_STYLE}>{ocpuMemoryText(instance) ?? "-"}</td>
                 <td style={TD_STYLE}>
                   {instance ? `${instance["availability-domain"] ?? "-"} / ${instance["fault-domain"] ?? "-"}` : "-"}
                 </td>

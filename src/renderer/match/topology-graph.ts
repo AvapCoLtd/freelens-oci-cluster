@@ -1,6 +1,6 @@
 import type { ClusterOciData } from "../fetch/fetch";
 import type { OciResult } from "../oci/result";
-import type { OciFssExport, OciSubnet, OciVcn } from "../oci/types";
+import type { OciBackupPolicyView, OciFssExport, OciSubnet, OciVcn, OciVnic, OciVolume } from "../oci/types";
 import { buildConsoleUrl, type OciConsoleResourceType } from "./console-url";
 import {
   type GatewayKind,
@@ -9,7 +9,8 @@ import {
   gatewayKindOf,
   isSupportedGatewayId,
 } from "./gateway-status";
-import { isAbnormalLifecycleState } from "./lifecycle-state";
+import { placementSummary, shapeSummary, shapeText } from "./instance-shape";
+import { isAbnormalLifecycleState, isAttachedState } from "./lifecycle-state";
 import {
   backendIpsOf,
   buildNetworkView,
@@ -63,6 +64,7 @@ export const TOPOLOGY_EDGE_KINDS = [
   "waf-lb",
   "service-lb",
   "pv-storage",
+  "attachment",
   "volume-backup",
   "fss-snapshot",
   "route",
@@ -85,6 +87,8 @@ export interface TopologyNode {
   id: string;
   kind: TopologyNodeKind;
   label: string;
+  /** ラベルに添える1行の要約。読むのはMermaid出力だけで、画面のコンテナ副題はdetailのCIDRから別に組む */
+  summary?: string;
   /** 包含の親(VCN / Subnet)。持たないノードは図の最上位に置かれる */
   parentId?: string;
   status?: TopologyNodeStatus;
@@ -103,9 +107,12 @@ export interface TopologyEdge {
   kind: TopologyEdgeKind;
 }
 
-/** 取得失敗で図に出せなかった種別。sectionsは由来する失敗セクション(TOPOLOGY_SECTIONS順)。 */
+/**
+ * 取得失敗で図に出せなかった種別。sectionsは由来する失敗セクション(TOPOLOGY_SECTIONS順)。
+ * target="detail"はノード自体は出るが詳細・配置根拠が欠ける劣化を表す。
+ */
 export interface TopologyMissing {
-  target: "node" | "edge";
+  target: "node" | "edge" | "detail";
   kind: TopologyNodeKind | TopologyEdgeKind;
   sections: TopologySection[];
 }
@@ -160,7 +167,7 @@ const NODE_KIND_SECTIONS: Partial<Record<TopologyNodeKind, readonly TopologySect
   nlb: ["taggedResources", "nlbs"],
   gateway: ["routeTables", "gateways"],
   waf: ["taggedResources", "wafs"],
-  volume: ["volumes"],
+  volume: ["volumes", "volumeAttachments"],
   filesystem: ["fileSystems"],
   "backup-policy": ["volumeBackupPolicies"],
   "snapshot-policy": ["fssSnapshotPolicies"],
@@ -171,9 +178,16 @@ const EDGE_KIND_SECTIONS: Record<TopologyEdgeKind, readonly TopologySection[]> =
   "waf-lb": ["taggedResources", "wafs", "lbs"],
   "service-lb": ["taggedResources", "lbs", "nlbs"],
   "pv-storage": ["volumes", "fileSystems"],
+  attachment: ["instances", "volumeAttachments"],
   "volume-backup": ["volumes", "volumeBackupPolicies"],
   "fss-snapshot": ["fileSystems", "fssSnapshotPolicies"],
   route: ["subnets", "routeTables", "gateways"],
+};
+
+/** ノードは出るが情報が欠ける種別と、その根拠セクション。 */
+const DETAIL_KIND_SECTIONS: Partial<Record<TopologyNodeKind, readonly TopologySection[]>> = {
+  // VNICはInstanceの配置(所属Subnet)とIP表示の根拠。欠けてもInstanceノード自体はinstances listで出る。
+  instance: ["vnics"],
 };
 
 const KIND_ORDER = new Map<TopologyNodeKind, number>(TOPOLOGY_NODE_KINDS.map((kind, index) => [kind, index]));
@@ -303,6 +317,13 @@ function vcnCidrs(vcn: OciVcn): string[] {
   return [...cidrs];
 }
 
+/** 1行に収めるCIDR要約。IPv6併記などで複数あるときは先頭CIDR + 残り件数にする。 */
+export function cidrSummary(cidrs: readonly string[]): string | undefined {
+  const head = cidrs[0];
+  if (head === undefined) return undefined;
+  return cidrs.length > 1 ? `${head} +${cidrs.length - 1}` : head;
+}
+
 function statusOf(lifecycleState: string | undefined): TopologyNodeStatus {
   if (lifecycleState === undefined) return "unknown";
   return isAbnormalLifecycleState(lifecycleState) ? "warning" : "ok";
@@ -311,6 +332,12 @@ function statusOf(lifecycleState: string | undefined): TopologyNodeStatus {
 /** 集約ノードに畳んだInstance 1件分の値(表示・検索とも改行区切りの1エントリで持つ)。 */
 function memberDetailValue(member: TopologyNode): string {
   return [...new Set([member.label, ...member.detail.map((row) => row.value)])].join("\n");
+}
+
+/** ラベル2行目。複数の要約を1行へ並べる。 */
+function summaryOf(parts: (string | undefined)[]): string | undefined {
+  const kept = parts.filter((part): part is string => !!part);
+  return kept.length > 0 ? kept.join(" · ") : undefined;
 }
 
 function detailOf(rows: (TopologyDetail | undefined)[]): TopologyDetail[] {
@@ -363,11 +390,13 @@ function failedSectionsOf(data: ClusterOciData, extra: readonly TopologySection[
   mark("cluster", isFailed(data.cluster));
   mark("taggedResources", isFailed(data.taggedResources));
   mark("instances", isFailed(data.instances));
+  mark("vnics", isFailed(data.vnicAttachments) || hasFailedEntry(data.vnics));
   mark("nodePools", isFailed(data.nodePools));
   mark("lbs", isFailed(data.lbs));
   mark("nlbs", isFailed(data.nlbs));
   mark("wafs", isFailed(data.wafs));
   mark("volumes", isFailed(data.volumes));
+  mark("volumeAttachments", isFailed(data.volumeAttachments));
   mark("volumeBackupPolicies", hasFailedEntry(data.volumeBackupPolicies));
   mark("fileSystems", hasFailedEntry(data.fileSystems) || hasFailedEntry(data.fssExports));
   mark("fssSnapshotPolicies", hasFailedEntry(data.fssSnapshotPolicies));
@@ -382,7 +411,7 @@ function failedSectionsOf(data: ClusterOciData, extra: readonly TopologySection[
 function missingOf(failed: ReadonlySet<TopologySection>): TopologyMissing[] {
   const missing: TopologyMissing[] = [];
   const push = (
-    target: "node" | "edge",
+    target: TopologyMissing["target"],
     kind: TopologyNodeKind | TopologyEdgeKind,
     sections: readonly TopologySection[],
   ) => {
@@ -392,6 +421,10 @@ function missingOf(failed: ReadonlySet<TopologySection>): TopologyMissing[] {
   for (const kind of TOPOLOGY_NODE_KINDS) {
     const sections = NODE_KIND_SECTIONS[kind];
     if (sections) push("node", kind, sections);
+  }
+  for (const kind of TOPOLOGY_NODE_KINDS) {
+    const sections = DETAIL_KIND_SECTIONS[kind];
+    if (sections) push("detail", kind, sections);
   }
   for (const kind of TOPOLOGY_EDGE_KINDS) push("edge", kind, EDGE_KIND_SECTIONS[kind]);
   return missing;
@@ -454,11 +487,43 @@ function pvStorageConsoleUrlOf(
   return fileSystemId ? consoleUrlOf("filesystem", fileSystemId) : undefined;
 }
 
+/**
+ * Volumeの詳細に出すバックアップポリシー行。
+ * 照会が走っていないVolume(一覧に無くattachment経由で出たもの)は「None」(照会済み・未割当)と書き分ける。
+ */
+function backupPolicyText(
+  policies: Record<string, OciResult<OciBackupPolicyView>>,
+  volumeId: string,
+): string | undefined {
+  const result = policies[volumeId] as OciResult<OciBackupPolicyView> | undefined;
+  if (!result) return "Not queried";
+  if (!result.ok) return undefined;
+  return result.data.policyName ?? "None";
+}
+
 /** per-OCID Mapの成功データ(未取得・失敗はundefined)。 */
 function okEntry<T>(record: Record<string, OciResult<T>>, id: string | undefined): T | undefined {
   if (!id) return undefined;
   const result = record[id] as OciResult<T> | undefined;
   return result?.ok ? result.data : undefined;
+}
+
+/**
+ * Instance OCID→primary VNIC。primaryが1つも取れないInstanceは載らない
+ * (secondary VNICのsubnetを配置根拠にすると、実際とは違うSubnetへ置く)。
+ */
+function primaryVnicByInstance(data: ClusterOciData): Map<string, OciVnic> {
+  const byInstance = new Map<string, OciVnic>();
+  if (!data.vnicAttachments.ok) return byInstance;
+  for (const attachment of [...data.vnicAttachments.data].sort((a, b) => compareText(a.id, b.id))) {
+    const instanceId = attachment["instance-id"];
+    const vnicId = attachment["vnic-id"];
+    if (!instanceId || !vnicId || byInstance.has(instanceId)) continue;
+    if (!isAttachedState(attachment["lifecycle-state"])) continue;
+    const vnic = okEntry(data.vnics, vnicId);
+    if (vnic?.["is-primary"]) byInstance.set(instanceId, vnic);
+  }
+  return byInstance;
 }
 
 /**
@@ -486,6 +551,7 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
       id: vcnId,
       kind: "vcn",
       label: vcn?.["display-name"] ?? vcnId,
+      summary: vcn ? cidrSummary(vcnCidrs(vcn)) : undefined,
       status: statusOf(vcn?.["lifecycle-state"]),
       detail: detailOf([
         text("Name", vcn?.["display-name"]),
@@ -515,6 +581,7 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
     .sort((a, b) => compareText(a.id, b.id));
   const instanceIps = new Map<string, string[]>();
   const instanceParent = new Map<string, string>();
+  const primaryVnics = primaryVnicByInstance(data);
   for (const instance of instances) {
     const k8sNode = k8sNodeByInstanceId.get(instance.id);
     const internalIps = k8sNode ? internalIpsOf(k8sNode) : [];
@@ -522,8 +589,16 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
       .filter(([, subnet]) => subnetCidrs(subnet).some((cidr) => internalIps.some((ip) => ipInCidr(ip, cidr))))
       .map(([subnetId]) => subnetId);
     instanceIps.set(instance.id, k8sNode ? allIpsOf(k8sNode) : []);
-    // 0件一致・複数一致はどちらも配置根拠が立たない(Unplaced領域へ落とす)
-    const placed = matchedSubnets.length === 1 ? matchedSubnets[0] : undefined;
+    const vnicSubnetId = primaryVnics.get(instance.id)?.["subnet-id"];
+    // primary VNICのsubnetが分かればそれが正で、図に無いSubnetを指すならCIDR照合では代替しない。
+    // CIDR照合は0件一致・複数一致とも根拠が立たない(どちらもUnplacedへ落とす)
+    const placed = vnicSubnetId
+      ? subnetById.has(vnicSubnetId)
+        ? vnicSubnetId
+        : undefined
+      : matchedSubnets.length === 1
+        ? matchedSubnets[0]
+        : undefined;
     if (placed) instanceParent.set(instance.id, placed);
   }
 
@@ -549,6 +624,7 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
       id: subnetId,
       kind: "subnet",
       label: subnet["display-name"] ?? subnetId,
+      summary: cidrSummary(subnetCidrs(subnet)),
       parentId: vcnParentId,
       status: statusOf(subnet["lifecycle-state"]),
       detail: detailOf([
@@ -582,17 +658,21 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
 
   for (const instance of instances) {
     const k8sNode = k8sNodeByInstanceId.get(instance.id);
+    const vnic = primaryVnics.get(instance.id);
     putNode({
       id: instance.id,
       kind: "instance",
       label: instance["display-name"] ?? instance.id,
+      summary: summaryOf([shapeSummary(instance), placementSummary(instance)]),
       parentId: instanceParent.get(instance.id),
       status: statusOf(instance["lifecycle-state"]),
       detail: detailOf([
         text("Name", instance["display-name"]),
         text("OCID", instance.id, "ocid"),
         text("State", instance["lifecycle-state"]),
-        text("Shape", instance.shape),
+        text("Shape", shapeText(instance)),
+        text("Private IP", vnic?.["private-ip"]),
+        text("Public IP", vnic?.["public-ip"] ?? undefined),
         text("Node", k8sNode?.metadata.name),
         text("Availability Domain", instance["availability-domain"]),
       ]),
@@ -678,6 +758,30 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
     });
   }
 
+  const volumeById = new Map<string, OciVolume>(
+    (data.volumes.ok ? data.volumes.data : []).map((volume) => [volume.id, volume]),
+  );
+  // Volume一覧に無いOCIDでもノードは作る(attachment経由の参照。名前・容量が無いだけで実体はある)。
+  const putVolumeNode = (volumeId: string) => {
+    const volume = volumeById.get(volumeId);
+    const sizeText = volume?.["size-in-gbs"] === undefined ? undefined : `${volume["size-in-gbs"]} GB`;
+    putNode({
+      id: volumeId,
+      kind: "volume",
+      label: volume?.["display-name"] ?? volumeId,
+      summary: sizeText,
+      status: statusOf(volume?.["lifecycle-state"]),
+      detail: detailOf([
+        text("Name", volume?.["display-name"]),
+        text("OCID", volumeId, "ocid"),
+        text("State", volume?.["lifecycle-state"]),
+        text("Size", sizeText),
+        text("Backup Policy", backupPolicyText(data.volumeBackupPolicies, volumeId)),
+      ]),
+      consoleUrl: consoleUrlOf("volume", volumeId),
+    });
+  };
+
   interface PvLink {
     pvNodeId: string;
     storageNodeId?: string;
@@ -705,27 +809,14 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
     });
     const ocid = resolution.ocid;
     if (resolution.kind === "block_volume") {
-      const volume = data.volumes.ok ? data.volumes.data.find((candidate) => candidate.id === ocid) : undefined;
-      if (!volume) {
-        pvLinks.push({ pvNodeId });
-        continue;
-      }
+      // 実在しないノード宛てのエッジはputEdgeが捨てるため、常に積んでよい
+      // (attachment経由でVolumeノードが生まれた回だけ合流する)。
+      pvLinks.push({ pvNodeId, storageNodeId: ocid });
+      // Volume一覧に無いPV参照は孤立PVの観測結果のため、ここではノードを作らない。
+      if (!volumeById.has(ocid)) continue;
+      putVolumeNode(ocid);
       const assignment = okEntry(data.volumeBackupPolicies, ocid);
       const policyId = assignment?.policyId;
-      putNode({
-        id: ocid,
-        kind: "volume",
-        label: volume["display-name"] ?? ocid,
-        status: statusOf(volume["lifecycle-state"]),
-        detail: detailOf([
-          text("Name", volume["display-name"]),
-          text("OCID", ocid, "ocid"),
-          text("State", volume["lifecycle-state"]),
-          text("Size", volume["size-in-gbs"] === undefined ? undefined : `${volume["size-in-gbs"]} GB`),
-          text("Backup Policy", assignment ? (assignment.policyName ?? "None") : undefined),
-        ]),
-        consoleUrl: consoleUrlOf("volume", ocid),
-      });
       if (policyId) {
         putNode({
           id: policyId,
@@ -736,7 +827,6 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
           consoleUrl: consoleUrlOf("volume-backup-policy", policyId),
         });
       }
-      pvLinks.push({ pvNodeId, storageNodeId: ocid });
       continue;
     }
     // volumeHandleがExport OCIDのPVはexport応答経由でしかFileSystem OCIDに辿り着けない。
@@ -772,6 +862,23 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
       });
     }
     pvLinks.push({ pvNodeId, storageNodeId: fileSystemId });
+  }
+
+  const instanceIds = new Set(instances.map((instance) => instance.id));
+  const volumeLinks: { instanceId: string; volumeId: string }[] = [];
+  const seenVolumeLinks = new Set<string>();
+  for (const attachment of (data.volumeAttachments.ok ? data.volumeAttachments.data : [])
+    .slice()
+    .sort((a, b) => compareText(a.id, b.id))) {
+    const instanceId = attachment["instance-id"];
+    const volumeId = attachment["volume-id"];
+    if (!instanceId || !volumeId || !instanceIds.has(instanceId)) continue;
+    if (!isAttachedState(attachment["lifecycle-state"])) continue;
+    const key = `${instanceId}|${volumeId}`;
+    if (seenVolumeLinks.has(key)) continue;
+    seenVolumeLinks.add(key);
+    volumeLinks.push({ instanceId, volumeId });
+    putVolumeNode(volumeId);
   }
 
   const groupOf = new Map<string, string>();
@@ -847,6 +954,7 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
   for (const link of pvLinks) {
     if (link.storageNodeId) putEdge("pv-storage", link.pvNodeId, link.storageNodeId);
   }
+  for (const link of volumeLinks) putEdge("attachment", link.instanceId, link.volumeId);
   for (const node of [...nodeById.values()].sort(compareNodes)) {
     if (node.kind === "volume") {
       const policyId = okEntry(data.volumeBackupPolicies, node.id)?.policyId;

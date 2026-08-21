@@ -13,10 +13,42 @@ export interface OciInstance {
   id: string;
   "display-name"?: string;
   shape?: string;
+  "shape-config"?: {
+    ocpus?: number;
+    "memory-in-gbs"?: number;
+  };
   "availability-domain"?: string;
   "fault-domain"?: string;
   "lifecycle-state"?: string;
   "defined-tags"?: OciDefinedTags;
+}
+
+/** `compute vnic-attachment list`(フィクスチャ未採取。形はAPI仕様からの推測) */
+export interface OciVnicAttachment {
+  id: string;
+  "instance-id"?: string;
+  "vnic-id"?: string | null;
+  "lifecycle-state"?: string;
+}
+
+/** `compute volume-attachment list`(フィクスチャ未採取。形はAPI仕様からの推測) */
+export interface OciVolumeAttachment {
+  id: string;
+  "instance-id"?: string;
+  "volume-id"?: string;
+  "lifecycle-state"?: string;
+  "attachment-type"?: string;
+  device?: string | null;
+  "is-read-only"?: boolean;
+}
+
+/** `network vnic get`(フィクスチャ未採取。形はAPI仕様からの推測) */
+export interface OciVnic {
+  id: string;
+  "subnet-id"?: string;
+  "private-ip"?: string;
+  "public-ip"?: string | null;
+  "is-primary"?: boolean;
 }
 
 /** `ce node-pool get` → 01b(アンカー解決が読む2フィールドのみ) */

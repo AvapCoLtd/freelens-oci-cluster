@@ -41,7 +41,7 @@ For non-OKE clusters, the extension displays an out-of-scope message.
 
 | Page | Contents |
 |---|---|
-| Nodes | K8s Node to OCI Instance mappings and a node pool summary |
+| Nodes | K8s Node to OCI Instance mappings (shape, OCPU / memory) and a node pool summary |
 | Service↔LB | LoadBalancer Service to NLB / classic LB mappings |
 | PV ↔ Storage | PersistentVolume to Block Volume / FSS mappings and backup policies |
 | Network | DNS (with a console link to the matching OCI DNS zone), WAF, LB/NLB, subnet, route, and backend health checks in outside-in path order |
@@ -49,6 +49,7 @@ For non-OKE clusters, the extension displays an out-of-scope message.
 
 The search bar on each page filters displayed content, including expandable details.
 A header toggle enables auto-refresh; its interval is configurable in Preferences (60 seconds by default).
+The copy button in the Topology page header writes the diagram on screen to the clipboard as Mermaid flowchart text.
 
 ## Settings
 

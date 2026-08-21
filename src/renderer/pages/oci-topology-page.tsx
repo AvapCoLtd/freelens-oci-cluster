@@ -7,6 +7,7 @@ import { PollingToggle } from "../components/polling-toggle";
 import { SearchBar } from "../components/search-bar";
 import { TopologyDetailPanel } from "../components/topology-detail-panel";
 import { TopologyGraphView } from "../components/topology-graph-view";
+import { TopologyMermaidCopyButton } from "../components/topology-mermaid-copy-button";
 import { TopologyMissingBanner } from "../components/topology-missing-banner";
 import { TopologyProgress } from "../components/topology-progress";
 import { type SearchState, useSearchQuery } from "../components/use-search-query";
@@ -111,6 +112,7 @@ const TopologyPageContent = observer(function TopologyPageContent({
     });
     return {
       data: current.data,
+      graph,
       missing: graph.missing,
       flow: toTopologyFlow(graph, layoutTopology(graph.nodes, graph.edges)),
       nodeById: new Map<string, TopologyNode>(graph.nodes.map((node) => [node.id, node])),
@@ -132,6 +134,7 @@ const TopologyPageContent = observer(function TopologyPageContent({
   const k8sReady = k8s.loaded.nodes && k8s.loaded.services && k8s.loaded.persistentVolumes;
   const selectedNode = selectedId ? view?.nodeById.get(selectedId) : undefined;
   const catalogName = Renderer.Catalog.getActiveCluster()?.name;
+  const headerInfo = buildHeaderInfo(state, catalogName);
 
   const body = (() => {
     switch (state.status) {
@@ -174,7 +177,7 @@ const TopologyPageContent = observer(function TopologyPageContent({
   return (
     <div style={PAGE_STYLE}>
       <OciHeader
-        info={buildHeaderInfo(state, catalogName)}
+        info={headerInfo}
         fetching={state.status === "fetching" || (state.status === "loaded" && !state.settled) || manualRefreshing}
         // 図を消さずに差し替えるためforce再取得を使う。アンカー未解決の初回だけはrefreshで解決からやり直す。
         // pollRefreshはready済みセクションをloadingに戻さないため、手動時のみ自前のフラグで取得中を示す。
@@ -184,11 +187,22 @@ const TopologyPageContent = observer(function TopologyPageContent({
             return;
           }
           setManualRefreshing(true);
-          void ociClusterStore.pollRefresh(clusterKey, "topology").finally(() => {
+          void ociClusterStore.pollRefresh(clusterKey, "topology", true).finally(() => {
             if (mountedRef.current) setManualRefreshing(false);
           });
         }}
-        extras={<PollingToggle clusterKey={clusterKey} page="topology" />}
+        extras={
+          <>
+            <PollingToggle clusterKey={clusterKey} page="topology" />
+            <TopologyMermaidCopyButton
+              graph={view?.graph}
+              meta={{
+                clusterName: headerInfo.clusterName,
+                compartmentId: state.status === "loaded" ? state.anchor.compartmentId : undefined,
+              }}
+            />
+          </>
+        }
       />
       <div style={BODY_STYLE}>{body}</div>
     </div>

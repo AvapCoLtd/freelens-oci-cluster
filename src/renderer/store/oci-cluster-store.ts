@@ -1,5 +1,5 @@
 import { Renderer } from "@freelensapp/extensions";
-import { action, makeObservable, observable, runInAction } from "mobx";
+import { action, type IReactionDisposer, makeObservable, observable, reaction, runInAction } from "mobx";
 import { resolveAnchor } from "../fetch/anchor";
 import { resolveHostIps } from "../fetch/dns";
 import {
@@ -30,6 +30,9 @@ import {
   fetchVcnRouteTables,
   fetchVcnSecurityLists,
   fetchVcnSubnets,
+  fetchVnic,
+  fetchVnicAttachments,
+  fetchVolumeAttachments,
   fetchVolumeBackupPolicies,
   fetchVolumeBackupPolicyName,
   fetchVolumes,
@@ -40,10 +43,11 @@ import {
 import { collectHostnames } from "../match/dns-check";
 import { gatewayIdsOfRouteTables, type OciGatewayStatusView } from "../match/gateway-status";
 import { managedCertificateIdsOf } from "../match/lb-certificates";
+import { isAttachedState } from "../match/lifecycle-state";
 import { clusterLbIds, collectNsgIds, collectSubnetIds, internalIpsOfNodes } from "../match/network-path";
 import type { OciPage, TopologySection } from "../match/page-sections";
 import { sectionsForPage, TOPOLOGY_SECTIONS } from "../match/page-sections";
-import { pickAnchorInstanceId } from "../match/provider-id";
+import { parseProviderId, pickAnchorInstanceId } from "../match/provider-id";
 import {
   distinctBlockVolumeOcids,
   distinctFssRefOcids,
@@ -76,7 +80,10 @@ import type {
   OciSecurityList,
   OciSubnet,
   OciVcn,
+  OciVnic,
+  OciVnicAttachment,
   OciVolume,
+  OciVolumeAttachment,
   OciVolumeBackupPolicy,
   OciWafPolicy,
   OciWafSummary,
@@ -128,7 +135,15 @@ export interface TopologySnapshot {
  * per-OCID Mapを埋める側の取得結果。Mapへseedした後もlist自体の成否を残す。
  * これが無いとMapが空のときに「対象が無い」と「網羅取得に失敗した」を区別できない。
  */
-type ReconcileOutcomeKey = "fileSystems" | "vcn" | "subnets" | "routeTables" | "securityLists" | "nsgs" | "gateways";
+type ReconcileOutcomeKey =
+  | "fileSystems"
+  | "vcn"
+  | "vnics"
+  | "subnets"
+  | "routeTables"
+  | "securityLists"
+  | "nsgs"
+  | "gateways";
 
 // VcnNetwork.resultsのキー(型別listの取得単位)。
 const VCN_LIST_SECTIONS = ["subnets", "routeTables", "securityLists", "nsgs", "gateways"] as const;
@@ -140,6 +155,7 @@ type OcidMapKey =
   | "fileSystems"
   | "fssExports"
   | "vcns"
+  | "vnics"
   | "subnets"
   | "securityLists"
   | "routeTables"
@@ -156,10 +172,12 @@ interface ClusterCache {
   anchor: AnchorState;
   cluster: SectionState<OciCluster>;
   instances: SectionState<OciInstance[]>;
+  vnicAttachments: SectionState<OciVnicAttachment[]>;
   taggedResources: SectionState<OciResourceSummary[]>;
   nlbs: SectionState<OciNetworkLoadBalancerSummary[]>;
   lbs: SectionState<OciLoadBalancer[]>;
   volumes: SectionState<OciVolume[]>;
+  volumeAttachments: SectionState<OciVolumeAttachment[]>;
   nodePools: SectionState<OciNodePoolSummary[]>;
   wafs: SectionState<OciWafSummary[]>;
   dnsZones: SectionState<OciDnsZone[]>;
@@ -172,6 +190,8 @@ interface ClusterCache {
   fileSystemsReconciled: boolean;
   vcns: Map<string, SectionState<OciVcn>>;
   vcnsReconciled: boolean;
+  vnics: Map<string, SectionState<OciVnic>>;
+  vnicsReconciled: boolean;
   subnets: Map<string, SectionState<OciSubnet>>;
   securityLists: Map<string, SectionState<OciSecurityList>>;
   routeTables: Map<string, SectionState<OciRouteTable>>;
@@ -196,10 +216,12 @@ function createIdleCache(): ClusterCache {
     anchor: { status: "idle" },
     cluster: { status: "idle" },
     instances: { status: "idle" },
+    vnicAttachments: { status: "idle" },
     taggedResources: { status: "idle" },
     nlbs: { status: "idle" },
     lbs: { status: "idle" },
     volumes: { status: "idle" },
+    volumeAttachments: { status: "idle" },
     nodePools: { status: "idle" },
     wafs: { status: "idle" },
     dnsZones: { status: "idle" },
@@ -211,6 +233,8 @@ function createIdleCache(): ClusterCache {
     fileSystemsReconciled: false,
     vcns: new Map(),
     vcnsReconciled: false,
+    vnics: new Map(),
+    vnicsReconciled: false,
     subnets: new Map(),
     securityLists: new Map(),
     routeTables: new Map(),
@@ -248,6 +272,9 @@ const EMPTY_VCN_NETWORK: VcnNetwork = {
   results: new Map(),
 };
 
+/** K8s Node集合の変化をVNIC再取得へ流すまでの待ち時間。 */
+const NODE_CHANGE_DEBOUNCE_MS = 2000;
+
 const NOT_REQUESTED_MESSAGE = "section not requested for this page";
 const LOADING_MESSAGE = "section is still being fetched";
 
@@ -258,6 +285,31 @@ const POLLING_STOP_ERROR_KINDS: ReadonlySet<OciErrorKind> = new Set([
   "command_incompatible",
   "internal",
 ]);
+
+/** attachment一覧から、対象Instanceに繋がるVNIC OCIDを重複なく取り出す。 */
+function clusterVnicIds(attachments: OciResult<OciVnicAttachment[]>, instanceIds: ReadonlySet<string>): string[] {
+  if (!attachments.ok) return [];
+  const vnicIds = new Set<string>();
+  for (const attachment of attachments.data) {
+    const instanceId = attachment["instance-id"];
+    const vnicId = attachment["vnic-id"];
+    if (!vnicId || !instanceId || !instanceIds.has(instanceId)) continue;
+    if (!isAttachedState(attachment["lifecycle-state"])) continue;
+    vnicIds.add(vnicId);
+  }
+  return [...vnicIds].sort();
+}
+
+/**
+ * per-OCID Mapを今回列挙できたOCIDだけに絞る(消えたリソースのエントリを残さない)。
+ * 落とすものが無ければundefinedを返す: 毎回新しいMapへ差し替えると、内容不変でも
+ * スナップショットの同一性比較(sameClusterOciData)が別物と見て世代が進む。
+ */
+function prunedMap<T>(map: ReadonlyMap<string, T>, ids: readonly string[]): Map<string, T> | undefined {
+  const keep = new Set(ids);
+  const entries = [...map].filter(([id]) => keep.has(id));
+  return entries.length === map.size ? undefined : new Map(entries);
+}
 
 /** backendHealths Mapのキー(UI側のRecord参照と共有)。 */
 export function backendHealthKey(kind: "lb" | "nlb", lbId: string, backendSetName: string): string {
@@ -303,6 +355,9 @@ export class OciClusterStore {
   private readonly epochs = new Map<string, number>();
   // 確定スナップショットの採番。ページはこの値の変化をOCI側入力の差し替え契機にする。
   private readonly topologyGenerations = new Map<string, number>();
+  // 進行中のポーリング(force)サイクル。スナップショットの確定はこの完了を待つ。
+  private readonly pollingInFlight = new Map<string, Promise<OciErrorKind | undefined>>();
+  private nodeWatcher: { clusterKey: string; stop: IReactionDisposer } | undefined;
 
   constructor() {
     makeObservable(this, {
@@ -313,6 +368,12 @@ export class OciClusterStore {
 
   setOciCliCommand(value: string): void {
     this.ociCliCommand = value;
+  }
+
+  /** 拡張の無効化時にK8s Node監視を解除する。 */
+  dispose(): void {
+    this.nodeWatcher?.stop();
+    this.nodeWatcher = undefined;
   }
 
   /**
@@ -392,6 +453,13 @@ export class OciClusterStore {
         outcomes.delete("vcn");
         continue;
       }
+      if (key === "vnics") {
+        patch.vnicAttachments = { status: "idle" };
+        patch.vnics = new Map();
+        patch.vnicsReconciled = false;
+        outcomes.delete("vnics");
+        continue;
+      }
       if (key === "fileSystems") {
         outcomes.delete("fileSystems");
         patch.fileSystems = new Map();
@@ -432,7 +500,27 @@ export class OciClusterStore {
    * anchor再解決はしない。backend healthは既存エントリの再取得のみ(展開したものだけを更新する)。
    * 戻り値はPOLLING_STOP_ERROR_KINDSに該当した種別(検出時のみ)で、呼び出し元がポーリング自動停止に使う。
    */
-  async pollRefresh(clusterKey: string, page: OciPage): Promise<OciErrorKind | undefined> {
+  pollRefresh(clusterKey: string, page: OciPage, refreshVnicBodies = false): Promise<OciErrorKind | undefined> {
+    const existing = this.pollingInFlight.get(clusterKey);
+    if (existing) return existing;
+    const promise = this.runPollRefresh(clusterKey, page, refreshVnicBodies);
+    this.pollingInFlight.set(clusterKey, promise);
+    void promise.then(
+      () => {
+        if (this.pollingInFlight.get(clusterKey) === promise) this.pollingInFlight.delete(clusterKey);
+      },
+      () => {
+        if (this.pollingInFlight.get(clusterKey) === promise) this.pollingInFlight.delete(clusterKey);
+      },
+    );
+    return promise;
+  }
+
+  private async runPollRefresh(
+    clusterKey: string,
+    page: OciPage,
+    refreshVnicBodies: boolean,
+  ): Promise<OciErrorKind | undefined> {
     const cache = this.getCache(clusterKey);
     if (cache.anchor.status !== "resolved") return undefined;
     const { clusterId, compartmentId } = cache.anchor.anchor;
@@ -443,10 +531,13 @@ export class OciClusterStore {
     ];
     if (sections.includes("vcn")) jobs.push(this.reconcileVcns(clusterKey, clusterId, true));
     if (sections.includes("instances")) jobs.push(this.ensureInstances(clusterKey, compartmentId, true));
+    if (sections.includes("vnics")) jobs.push(this.reconcileVnics(clusterKey, compartmentId, true, refreshVnicBodies));
     if (sections.includes("taggedResources")) jobs.push(this.ensureTaggedResources(clusterKey, clusterId, true));
     if (sections.includes("nlbs")) jobs.push(this.ensureNlbs(clusterKey, compartmentId, clusterId, true));
     if (sections.includes("lbs")) jobs.push(this.ensureLbs(clusterKey, compartmentId, clusterId, true));
     if (sections.includes("volumes")) jobs.push(this.ensureVolumes(clusterKey, compartmentId, clusterId, true));
+    if (sections.includes("volumeAttachments"))
+      jobs.push(this.ensureVolumeAttachments(clusterKey, compartmentId, true));
     if (sections.includes("nodePools")) jobs.push(this.ensureNodePools(clusterKey, clusterId, compartmentId, true));
     if (sections.includes("wafs")) jobs.push(this.ensureWafs(clusterKey, compartmentId, clusterId, true));
     // 型別listで一括取得する系は個別エントリのforceでは索引が古いままになるためreconcileを丸ごと回す。
@@ -540,6 +631,7 @@ export class OciClusterStore {
       case "nlbs":
       case "wafs":
       case "volumes":
+      case "volumeAttachments":
         return sectionStatus(cache[section]);
       case "fileSystems":
         return this.mapSectionStatus(cache, cache.fileSystemsReconciled, "fileSystems", [
@@ -553,6 +645,8 @@ export class OciClusterStore {
         return this.mapSectionStatus(cache, cache.fileSystemsReconciled, "fileSystems", [cache.fssSnapshotPolicies]);
       case "vcn":
         return this.mapSectionStatus(cache, cache.vcnsReconciled, "vcn", [cache.vcns]);
+      case "vnics":
+        return this.mapSectionStatus(cache, cache.vnicsReconciled, "vnics", [cache.vnics]);
       case "subnets":
         return this.mapSectionStatus(cache, cache.networkReconciled, "subnets", [cache.subnets]);
       case "routeTables":
@@ -622,6 +716,10 @@ export class OciClusterStore {
         if (!cache.vcnsReconciled || !this.mapsSettled([cache.vcns])) return false;
         continue;
       }
+      if (key === "vnics") {
+        if (!cache.vnicsReconciled || !this.mapsSettled([cache.vnics])) return false;
+        continue;
+      }
       if (key === "fileSystems") {
         if (!this.fileSystemsSettled(cache)) return false;
         continue;
@@ -683,6 +781,11 @@ export class OciClusterStore {
         pushMap(cache.vcns);
         continue;
       }
+      if (key === "vnics") {
+        if (cache.vnicAttachments.status === "ready") timestamps.push(cache.vnicAttachments.fetchedAt);
+        pushMap(cache.vnics);
+        continue;
+      }
       if (key === "fileSystems") {
         pushMap(cache.fssExports);
         pushMap(cache.fileSystems);
@@ -732,10 +835,13 @@ export class OciClusterStore {
     return {
       cluster: sectionResultOrPlaceholder(cache.cluster),
       instances: sectionResultOrPlaceholder(cache.instances),
+      vnicAttachments: sectionResultOrPlaceholder(cache.vnicAttachments),
+      vnics: this.toRecord(cache.vnics),
       taggedResources: sectionResultOrPlaceholder(cache.taggedResources),
       nlbs: sectionResultOrPlaceholder(cache.nlbs),
       lbs: sectionResultOrPlaceholder(cache.lbs),
       volumes: sectionResultOrPlaceholder(cache.volumes),
+      volumeAttachments: sectionResultOrPlaceholder(cache.volumeAttachments),
       nodePools: sectionResultOrPlaceholder(cache.nodePools),
       wafs: sectionResultOrPlaceholder(cache.wafs),
       fileSystems: this.toRecord(cache.fileSystems),
@@ -842,10 +948,12 @@ export class OciClusterStore {
 
     const jobs: Promise<unknown>[] = [];
     if (sections.includes("instances")) jobs.push(this.ensureInstances(clusterKey, compartmentId));
+    if (sections.includes("vnics")) jobs.push(this.reconcileVnics(clusterKey, compartmentId));
     if (sections.includes("taggedResources")) jobs.push(this.ensureTaggedResources(clusterKey, clusterId));
     if (sections.includes("nlbs")) jobs.push(this.ensureNlbs(clusterKey, compartmentId, clusterId));
     if (sections.includes("lbs")) jobs.push(this.ensureLbs(clusterKey, compartmentId, clusterId));
     if (sections.includes("volumes")) jobs.push(this.ensureVolumes(clusterKey, compartmentId, clusterId));
+    if (sections.includes("volumeAttachments")) jobs.push(this.ensureVolumeAttachments(clusterKey, compartmentId));
     if (sections.includes("fileSystems")) jobs.push(this.reconcileFileSystems(clusterKey, clusterId, compartmentId));
     if (sections.includes("nodePools")) jobs.push(this.ensureNodePools(clusterKey, clusterId, compartmentId));
     if (sections.includes("wafs")) jobs.push(this.ensureWafs(clusterKey, compartmentId, clusterId));
@@ -855,7 +963,11 @@ export class OciClusterStore {
     if (page === "service-lb" || page === "topology") jobs.push(this.ensureServiceNamespaces(clusterKey));
     if (page === "topology") {
       const epoch = this.epochOf(clusterKey);
-      void Promise.all(jobs).then(() => this.captureTopologySnapshot(clusterKey, epoch));
+      this.watchClusterNodes(clusterKey, compartmentId);
+      // 進行中のforceサイクルの完了も待つ: 待たずに確定させると新旧混在のスナップショットになる。
+      void Promise.all(jobs)
+        .then(() => this.pollingInFlight.get(clusterKey))
+        .then(() => this.captureTopologySnapshot(clusterKey, epoch));
     }
   }
 
@@ -914,6 +1026,112 @@ export class OciClusterStore {
       () => fetchInstances(compartmentId, this.ociCliCommand),
       force,
     );
+  }
+
+  private ensureVnicAttachments(
+    clusterKey: string,
+    compartmentId: string,
+    force = false,
+  ): Promise<OciResult<OciVnicAttachment[]>> {
+    return this.ensureSectionValue(
+      clusterKey,
+      "vnicAttachments",
+      (cache) => cache.vnicAttachments,
+      (state) => this.updateCache(clusterKey, { vnicAttachments: state }),
+      () => fetchVnicAttachments(compartmentId, this.ociCliCommand),
+      force,
+    );
+  }
+
+  private ensureVnic(clusterKey: string, vnicId: string, force = false): Promise<OciResult<OciVnic>> {
+    return this.ensureMapValue(clusterKey, "vnics", vnicId, () => fetchVnic(vnicId, this.ociCliCommand), force);
+  }
+
+  /** K8s NodeのproviderIDが指すInstance OCID(クラスタのノード実体)。 */
+  private clusterInstanceIds(): Set<string> | undefined {
+    if (!Renderer.K8sApi.nodesStore.isLoaded) return undefined;
+    const instanceIds = new Set<string>();
+    for (const node of Renderer.K8sApi.nodesStore.items) {
+      const parsed = parseProviderId(node.spec?.providerID);
+      if (parsed.isOke) instanceIds.add(parsed.instanceId);
+    }
+    return instanceIds;
+  }
+
+  /**
+   * topologyページのVNIC取得。compartment一括のattachment一覧から、クラスタのNodeに対応する
+   * Instance分のVNIC本体だけをgetする。列挙元がattachment一覧のため、その失敗は
+   * このセクション自体の失敗として記録する(Mapが空になる理由が「VNIC無し」と区別できなくなる)。
+   * refreshBodiesはVNIC本体getのforce(既定はforceと同値。ポーリングは一覧だけ取り直す)。
+   */
+  private reconcileVnics(
+    clusterKey: string,
+    compartmentId: string,
+    force = false,
+    refreshBodies = force,
+  ): Promise<OciResult<unknown>[]> {
+    const epoch = this.epochOf(clusterKey);
+    return (async () => {
+      try {
+        const instanceIds = this.clusterInstanceIds();
+        if (!instanceIds) return [];
+        if (instanceIds.size === 0) {
+          const result: OciResult<OciVnicAttachment[]> = { ok: true, data: [] };
+          if (this.epochOf(clusterKey) === epoch) {
+            const vnics = prunedMap(this.getCache(clusterKey).vnics, []);
+            this.updateCache(clusterKey, {
+              vnicAttachments: { status: "ready", result, fetchedAt: Date.now() },
+              vnicsReconciled: true,
+              ...(vnics ? { vnics } : {}),
+            });
+            this.recordReconcileOutcomes(clusterKey, epoch, [["vnics", result]]);
+          }
+          return [result];
+        }
+        const attachments = await this.ensureVnicAttachments(clusterKey, compartmentId, force);
+        const vnicIds = clusterVnicIds(attachments, instanceIds);
+        const results = await Promise.all(vnicIds.map((vnicId) => this.ensureVnic(clusterKey, vnicId, refreshBodies)));
+        if (this.epochOf(clusterKey) === epoch) {
+          // 列挙元が失敗した回の空集合は「VNIC無し」ではなく「不明」のため、刈り込みはlist成功時だけ行う。
+          const vnics = attachments.ok ? prunedMap(this.getCache(clusterKey).vnics, vnicIds) : undefined;
+          this.updateCache(clusterKey, { vnicsReconciled: true, ...(vnics ? { vnics } : {}) });
+          this.recordReconcileOutcomes(clusterKey, epoch, [["vnics", attachments]]);
+        }
+        return [attachments, ...results];
+      } catch (error) {
+        const failure: OciResult<unknown> = { ok: false, kind: "internal", raw: { message: String(error) } };
+        if (this.epochOf(clusterKey) === epoch) {
+          this.updateCache(clusterKey, { vnicsReconciled: true });
+          this.recordReconcileOutcomes(clusterKey, epoch, [["vnics", failure]]);
+        }
+        return [failure];
+      }
+    })();
+  }
+
+  /**
+   * K8s Node集合の変化にVNIC取得を追従させる。Node集合はVNIC列挙の根拠であり、
+   * スケールや入れ替えの後もポーリングだけでは新しいNodeのVNICが図に出ない。
+   */
+  private watchClusterNodes(clusterKey: string, compartmentId: string): void {
+    if (this.nodeWatcher?.clusterKey === clusterKey) return;
+    this.nodeWatcher?.stop();
+    const stop = reaction(
+      () => {
+        const instanceIds = this.clusterInstanceIds();
+        return instanceIds ? `loaded:${[...instanceIds].sort().join(",")}` : "loading";
+      },
+      () => {
+        const epoch = this.epochOf(clusterKey);
+        void this.reconcileVnics(clusterKey, compartmentId, true, false).then(async () => {
+          await this.pollingInFlight.get(clusterKey);
+          this.captureTopologySnapshot(clusterKey, epoch);
+        });
+      },
+      // ノードの入れ替え(ドレイン→追加)は数秒の間に何度も観測されるため、まとめて1回にする。
+      { delay: NODE_CHANGE_DEBOUNCE_MS },
+    );
+    this.nodeWatcher = { clusterKey, stop };
   }
 
   private ensureTaggedResources(
@@ -987,6 +1205,22 @@ export class OciClusterStore {
       (state) => this.updateCache(clusterKey, { volumes: state }),
       async () =>
         fetchVolumes(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.ociCliCommand),
+      force,
+    );
+  }
+
+  // topologyページのInstance→Volume紐付け。VNIC attachmentと同じくcompartment一括で1回だけ叩く。
+  private ensureVolumeAttachments(
+    clusterKey: string,
+    compartmentId: string,
+    force = false,
+  ): Promise<OciResult<OciVolumeAttachment[]>> {
+    return this.ensureSectionValue(
+      clusterKey,
+      "volumeAttachments",
+      (cache) => cache.volumeAttachments,
+      (state) => this.updateCache(clusterKey, { volumeAttachments: state }),
+      () => fetchVolumeAttachments(compartmentId, this.ociCliCommand),
       force,
     );
   }

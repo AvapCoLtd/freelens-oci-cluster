@@ -29,10 +29,13 @@ function baseData(overrides: Partial<ClusterOciData>): ClusterOciData {
   return {
     cluster: NOT_REQUESTED,
     instances: NOT_REQUESTED,
+    vnicAttachments: NOT_REQUESTED,
+    vnics: {},
     taggedResources: NOT_REQUESTED,
     nlbs: NOT_REQUESTED,
     lbs: NOT_REQUESTED,
     volumes: NOT_REQUESTED,
+    volumeAttachments: NOT_REQUESTED,
     fileSystems: {},
     fssExports: {},
     vcns: {},

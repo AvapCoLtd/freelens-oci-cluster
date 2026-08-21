@@ -113,6 +113,7 @@ export default class OciClusterRenderer extends Renderer.LensExtension {
 
   protected onDeactivate(): void {
     this.stopSyncingOciCommand?.();
+    ociClusterStore.dispose();
     for (const { id } of INJECTED_STYLES) removeInjectedStyle(id);
   }
 }

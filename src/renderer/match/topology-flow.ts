@@ -1,9 +1,11 @@
-import type {
-  TopologyEdgeKind,
-  TopologyGraph,
-  TopologyNode,
-  TopologyNodeKind,
-  TopologyNodeStatus,
+import {
+  cidrSummary,
+  type TopologyEdgeKind,
+  type TopologyGraph,
+  type TopologyMissing,
+  type TopologyNode,
+  type TopologyNodeKind,
+  type TopologyNodeStatus,
 } from "./topology-graph";
 import type { TopologyLayout, TopologyLayoutNode, TopologyPoint } from "./topology-layout";
 import { type RouteEdge, type RouteNode, routeTopologyEdges, type TopologySide } from "./topology-routes";
@@ -33,10 +35,23 @@ export const EDGE_KIND_LABEL: Record<TopologyEdgeKind, string> = {
   "waf-lb": "WAF → LB",
   "service-lb": "Service → LB",
   "pv-storage": "PV → Storage",
+  attachment: "Instance → Volume",
   "volume-backup": "Volume → Backup Policy",
   "fss-snapshot": "File System → Snapshot Policy",
   route: "Subnet → Gateway",
 };
+
+/** ノードは出るが情報が欠ける種別(target="detail")の文言。何が読めなくなるかを書く。 */
+const DETAIL_KIND_LABEL: Partial<Record<TopologyNodeKind, string>> = {
+  instance: "Instance placement / IP (VNICs)",
+};
+
+export function missingKindLabel(missing: TopologyMissing): string {
+  if (missing.target === "edge") return EDGE_KIND_LABEL[missing.kind as TopologyEdgeKind];
+  const kind = missing.kind as TopologyNodeKind;
+  if (missing.target === "node") return NODE_KIND_LABEL[kind];
+  return DETAIL_KIND_LABEL[kind] ?? NODE_KIND_LABEL[kind];
+}
 
 /**
  * エッジ種別の線色。暗色テーマ上で色相だけで見分けられるよう、彩度を抑えつつ色相を離す。
@@ -47,6 +62,7 @@ export const EDGE_KIND_COLOR: Record<TopologyEdgeKind, string> = {
   "waf-lb": "#d1868f",
   "service-lb": "#7fbf9a",
   "pv-storage": "#cfb173",
+  attachment: "#d289cb",
   "volume-backup": "#a892d6",
   "fss-snapshot": "#6fb6bd",
   route: "#8b9196",
@@ -122,13 +138,10 @@ export interface TopologyFlow {
 
 const CONTAINER_KINDS: ReadonlySet<TopologyNodeKind> = new Set(["vcn", "subnet"]);
 
-/** 1行に収める副題。IPv6併記などで複数あるときは先頭CIDR + 残り件数にする。 */
+/** 1行に収める副題。詳細のCIDR行(改行区切り)から組む。 */
 function cidrSublabel(node: TopologyNode): string | undefined {
   const value = node.detail.find((row) => row.role === "cidr")?.value;
-  if (!value) return undefined;
-  const cidrs = value.split("\n");
-  const head = cidrs[0] as string;
-  return cidrs.length > 1 ? `${head} +${cidrs.length - 1}` : head;
+  return value ? cidrSummary(value.split("\n")) : undefined;
 }
 
 function dataOf(node: TopologyNode): TopologyFlowNodeData {

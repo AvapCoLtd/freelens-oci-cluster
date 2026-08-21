@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { EDGE_KIND_COLOR, toTopologyFlow, UNPLACED_LABEL } from "./topology-flow";
-import type { TopologyEdge, TopologyGraph, TopologyNode, TopologyNodeKind } from "./topology-graph";
+import { EDGE_KIND_COLOR, EDGE_KIND_LABEL, missingKindLabel, toTopologyFlow, UNPLACED_LABEL } from "./topology-flow";
+import {
+  TOPOLOGY_EDGE_KINDS,
+  type TopologyEdge,
+  type TopologyGraph,
+  type TopologyNode,
+  type TopologyNodeKind,
+} from "./topology-graph";
 import { layoutTopology, UNPLACED_REGION_ID } from "./topology-layout";
 
 const VCN = "ocid1.vcn.oc1.ap-tokyo-1.vcn1";
@@ -20,6 +26,29 @@ function graphOf(nodes: TopologyNode[], edges: TopologyEdge[] = []): TopologyGra
 function flowOf(graph: TopologyGraph) {
   return toTopologyFlow(graph, layoutTopology(graph.nodes));
 }
+
+describe("凡例の網羅", () => {
+  it("全エッジ種別がラベルと色を持ち、色は重複しない", () => {
+    const colors = TOPOLOGY_EDGE_KINDS.map((kind) => EDGE_KIND_COLOR[kind]);
+    for (const kind of TOPOLOGY_EDGE_KINDS) expect(EDGE_KIND_LABEL[kind]).toBeTruthy();
+    expect(new Set(colors).size).toBe(TOPOLOGY_EDGE_KINDS.length);
+  });
+});
+
+describe("missingKindLabel", () => {
+  it("ノード欠落は種別名、エッジ欠落は繋がりの名前で出す", () => {
+    expect(missingKindLabel({ target: "node", kind: "instance", sections: ["instances"] })).toBe("Instance");
+    expect(missingKindLabel({ target: "edge", kind: "attachment", sections: ["volumeAttachments"] })).toBe(
+      "Instance → Volume",
+    );
+  });
+
+  it("詳細の欠落(劣化)はノード欠落と別の文言で出す", () => {
+    expect(missingKindLabel({ target: "detail", kind: "instance", sections: ["vnics"] })).toBe(
+      "Instance placement / IP (VNICs)",
+    );
+  });
+});
 
 describe("toTopologyFlow", () => {
   it("keeps the layout order so parents come before their children", () => {

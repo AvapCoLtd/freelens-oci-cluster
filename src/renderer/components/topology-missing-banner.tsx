@@ -2,8 +2,8 @@ import type * as React from "react";
 import type { ClusterOciData } from "../fetch/fetch";
 import type { TopologySection } from "../match/page-sections";
 import { TOPOLOGY_SECTION_LABEL, TOPOLOGY_SECTIONS } from "../match/page-sections";
-import { EDGE_KIND_LABEL, NODE_KIND_LABEL } from "../match/topology-flow";
-import type { TopologyEdgeKind, TopologyMissing, TopologyNodeKind } from "../match/topology-graph";
+import { missingKindLabel } from "../match/topology-flow";
+import type { TopologyMissing } from "../match/topology-graph";
 import type { OciErrorKind, OciRawErrorInfo, OciResult } from "../oci/result";
 import { describeOciError, RawErrorDetails } from "./error-guidance";
 
@@ -52,7 +52,10 @@ function failureOfSection(data: ClusterOciData, section: TopologySection): Secti
     case "nlbs":
     case "wafs":
     case "volumes":
+    case "volumeAttachments":
       return failureOf(data[section]);
+    case "vnics":
+      return failureOf(data.vnicAttachments) ?? firstFailure(data.vnics);
     case "fileSystems":
       return firstFailure(data.fileSystems);
     case "volumeBackupPolicies":
@@ -80,14 +83,8 @@ function failureOfSection(data: ClusterOciData, section: TopologySection): Secti
   }
 }
 
-function labelsOf(missing: readonly TopologyMissing[], target: "node" | "edge"): string[] {
-  return missing
-    .filter((entry) => entry.target === target)
-    .map((entry) =>
-      target === "node"
-        ? NODE_KIND_LABEL[entry.kind as TopologyNodeKind]
-        : EDGE_KIND_LABEL[entry.kind as TopologyEdgeKind],
-    );
+function labelsOf(missing: readonly TopologyMissing[], target: TopologyMissing["target"]): string[] {
+  return missing.filter((entry) => entry.target === target).map(missingKindLabel);
 }
 
 export interface TopologyMissingBannerProps {
@@ -100,6 +97,7 @@ export function TopologyMissingBanner({ missing, data }: TopologyMissingBannerPr
   if (missing.length === 0) return null;
   const nodeLabels = labelsOf(missing, "node");
   const edgeLabels = labelsOf(missing, "edge");
+  const detailLabels = labelsOf(missing, "detail");
   const failedSections = TOPOLOGY_SECTIONS.filter((section) =>
     missing.some((entry) => entry.sections.includes(section)),
   );
@@ -108,6 +106,7 @@ export function TopologyMissingBanner({ missing, data }: TopologyMissingBannerPr
       <strong>Some resources are missing from the diagram</strong>
       {nodeLabels.length > 0 && <div style={LINE_STYLE}>Missing nodes: {nodeLabels.join(", ")}</div>}
       {edgeLabels.length > 0 && <div style={LINE_STYLE}>Missing edges: {edgeLabels.join(", ")}</div>}
+      {detailLabels.length > 0 && <div style={LINE_STYLE}>Degraded: {detailLabels.join(", ")}</div>}
       {failedSections.map((section) => {
         const failure = failureOfSection(data, section);
         return (

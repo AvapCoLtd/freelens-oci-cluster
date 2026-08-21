@@ -41,10 +41,13 @@ function baseData(overrides: Partial<ClusterOciData>): ClusterOciData {
   return {
     cluster: NOT_REQUESTED,
     instances: NOT_REQUESTED,
+    vnicAttachments: NOT_REQUESTED,
+    vnics: {},
     taggedResources: NOT_REQUESTED,
     nlbs: NOT_REQUESTED,
     lbs: NOT_REQUESTED,
     volumes: NOT_REQUESTED,
+    volumeAttachments: NOT_REQUESTED,
     fileSystems: {},
     fssExports: {},
     vcns: {},
@@ -73,11 +76,15 @@ const RT_A = "ocid1.routetable.oc1.ap-tokyo-1.rt1";
 const NAT = "ocid1.natgateway.oc1.ap-tokyo-1.nat1";
 const DRG = "ocid1.drg.oc1.ap-tokyo-1.drg1";
 const INSTANCE_1 = "ocid1.instance.oc1.ap-tokyo-1.i1";
+const VNIC_1 = "ocid1.vnic.oc1.ap-tokyo-1.vnic1";
+const VNIC_ATTACHMENT_1 = "ocid1.vnicattachment.oc1.ap-tokyo-1.att1";
 const NLB_1 = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.nlb1";
 const LB_1 = "ocid1.loadbalancer.oc1.ap-tokyo-1.lb1";
 const WAF_1 = "ocid1.webappfirewall.oc1.ap-tokyo-1.waf1";
 const WAF_POLICY = "ocid1.webappfirewallpolicy.oc1.ap-tokyo-1.wafp1";
 const VOLUME_1 = "ocid1.volume.oc1.ap-tokyo-1.v1";
+const VOLUME_2 = "ocid1.volume.oc1.ap-tokyo-1.v2";
+const VOLUME_ATTACHMENT_1 = "ocid1.volumeattachment.oc1.ap-tokyo-1.va1";
 const BACKUP_POLICY = "ocid1.volumebackuppolicy.oc1.ap-tokyo-1.bp1";
 const FILE_SYSTEM_1 = "ocid1.filesystem.oc1.ap_tokyo_1.fs1";
 const FSS_EXPORT_1 = "ocid1.export.oc1.ap_tokyo_1.ex1";
@@ -137,6 +144,7 @@ function fullInput(overrides: Partial<TopologyGraphInput> = {}): TopologyGraphIn
     instances: anyOk([
       { id: INSTANCE_1, "display-name": "node-1", "lifecycle-state": "RUNNING", shape: "VM.Standard.E4.Flex" },
     ]),
+    vnicAttachments: anyOk([]),
     nodePools: anyOk([]),
     taggedResources: anyOk([]),
     nlbs: anyOk([
@@ -169,6 +177,16 @@ function fullInput(overrides: Partial<TopologyGraphInput> = {}): TopologyGraphIn
       },
     ]),
     volumes: anyOk([{ id: VOLUME_1, "display-name": "pvc-vol", "lifecycle-state": "AVAILABLE", "size-in-gbs": 50 }]),
+    volumeAttachments: anyOk([
+      {
+        id: VOLUME_ATTACHMENT_1,
+        "instance-id": INSTANCE_1,
+        "volume-id": VOLUME_1,
+        "lifecycle-state": "ATTACHED",
+        "attachment-type": "paravirtualized",
+        device: "/dev/oracleoci/oraclevdb",
+      },
+    ]),
     volumeBackupPolicies: { [VOLUME_1]: ok({ policyId: BACKUP_POLICY, policyName: "gold" }) },
     fileSystems: {
       [FILE_SYSTEM_1]: anyOk({
@@ -195,6 +213,34 @@ function nodeOf(nodes: TopologyNode[], id: string): TopologyNode {
   const found = nodes.find((node) => node.id === id);
   if (!found) throw new Error(`node not found: ${id}`);
   return found;
+}
+
+function detailValue(node: TopologyNode, label: string): string | undefined {
+  return node.detail.find((row) => row.label === label)?.value;
+}
+
+/** INSTANCE_1にprimary VNICを1枚付けた入力。 */
+function withVnic(
+  input: TopologyGraphInput,
+  vnic: Record<string, unknown>,
+  attachment: Record<string, unknown> = {},
+): TopologyGraphInput {
+  return {
+    ...input,
+    data: {
+      ...input.data,
+      vnicAttachments: anyOk([
+        {
+          id: VNIC_ATTACHMENT_1,
+          "instance-id": INSTANCE_1,
+          "vnic-id": VNIC_1,
+          "lifecycle-state": "ATTACHED",
+          ...attachment,
+        },
+      ]),
+      vnics: { [VNIC_1]: anyOk({ id: VNIC_1, "is-primary": true, ...vnic }) },
+    },
+  };
 }
 
 function edgeKinds(edges: { kind: TopologyEdgeKind }[]): Set<TopologyEdgeKind> {
@@ -302,10 +348,12 @@ describe("buildTopologyGraph 包含", () => {
     );
   });
 
-  it("詳細は共通3項目+種別固有3項目までに収める", () => {
-    const { nodes } = buildTopologyGraph(fullInput());
+  it("詳細は共通3項目+種別固有5項目までに収める", () => {
+    const { nodes } = buildTopologyGraph(
+      withVnic(fullInput(), { "subnet-id": SUBNET_A, "private-ip": "10.0.1.10", "public-ip": "203.0.113.50" }),
+    );
     for (const node of nodes) {
-      expect(node.detail.length).toBeLessThanOrEqual(6);
+      expect(node.detail.length).toBeLessThanOrEqual(8);
     }
     expect(nodeOf(nodes, SUBNET_A).detail).toEqual([
       { label: "Name", value: "node-subnet" },
@@ -321,7 +369,16 @@ describe("buildTopologyGraph エッジ", () => {
   it("8種のエッジを引く", () => {
     const { edges } = buildTopologyGraph(fullInput());
     expect(edgeKinds(edges)).toEqual(
-      new Set(["backend", "waf-lb", "service-lb", "pv-storage", "volume-backup", "fss-snapshot", "route"]),
+      new Set([
+        "backend",
+        "waf-lb",
+        "service-lb",
+        "pv-storage",
+        "attachment",
+        "volume-backup",
+        "fss-snapshot",
+        "route",
+      ]),
     );
     expect(edges).toEqual(
       expect.arrayContaining([
@@ -352,6 +409,7 @@ describe("buildTopologyGraph エッジ", () => {
           target: SNAPSHOT_POLICY,
           kind: "fss-snapshot",
         },
+        { id: `attachment|${INSTANCE_1}|${VOLUME_1}`, source: INSTANCE_1, target: VOLUME_1, kind: "attachment" },
         { id: `route|${SUBNET_A}|${NAT}`, source: SUBNET_A, target: NAT, kind: "route" },
         { id: `route|${SUBNET_A}|${DRG}`, source: SUBNET_A, target: DRG, kind: "route" },
       ]),
@@ -751,7 +809,7 @@ describe("buildTopologyGraph 孤立PV", () => {
     const input = fullInput();
     return {
       ...input,
-      data: { ...input.data, volumes: anyOk([]), volumeBackupPolicies },
+      data: { ...input.data, volumes: anyOk([]), volumeAttachments: anyOk([]), volumeBackupPolicies },
       persistentVolumes: [pv("pv-block", BLOCK_VOLUME_DRIVER, VOLUME_1)],
     };
   }
@@ -820,6 +878,313 @@ describe("buildTopologyGraph 孤立PV", () => {
   });
 });
 
+describe("buildTopologyGraph VNIC", () => {
+  it("primary VNICのsubnet-idはInternalIPのCIDR照合より優先する", () => {
+    const { nodes } = buildTopologyGraph(withVnic(fullInput(), { "subnet-id": SUBNET_B }));
+    expect(nodeOf(nodes, INSTANCE_1).parentId).toBe(SUBNET_B);
+  });
+
+  it("primary以外のVNICしか無ければCIDR照合へ落とす", () => {
+    const { nodes } = buildTopologyGraph(withVnic(fullInput(), { "subnet-id": SUBNET_B, "is-primary": false }));
+    expect(nodeOf(nodes, INSTANCE_1).parentId).toBe(SUBNET_A);
+  });
+
+  it("VNIC本体の取得失敗はCIDR照合へ落とす", () => {
+    const input = withVnic(fullInput(), { "subnet-id": SUBNET_B });
+    const { nodes } = buildTopologyGraph({ ...input, data: { ...input.data, vnics: { [VNIC_1]: FAILED } } });
+    expect(nodeOf(nodes, INSTANCE_1).parentId).toBe(SUBNET_A);
+  });
+
+  it("VNICのsubnetが取得済みSubnetに無ければCIDR照合で代替せずUnplacedにする", () => {
+    const { nodes } = buildTopologyGraph(withVnic(fullInput(), { "subnet-id": "ocid1.subnet.oc1.ap-tokyo-1.unknown" }));
+    expect(nodeOf(nodes, INSTANCE_1).parentId).toBeUndefined();
+  });
+
+  it("切り離し済みattachmentのVNICはprimaryとして採用しない", () => {
+    const input = withVnic(
+      fullInput(),
+      { "subnet-id": SUBNET_B, "private-ip": "10.0.2.5" },
+      { "lifecycle-state": "DETACHED" },
+    );
+    const { nodes } = buildTopologyGraph(input);
+    const node = nodeOf(nodes, INSTANCE_1);
+    expect(node.parentId).toBe(SUBNET_A);
+    expect(detailValue(node, "Private IP")).toBeUndefined();
+  });
+
+  it("attachment一覧の失敗はCIDR照合へ落とす", () => {
+    const input = fullInput();
+    const { nodes } = buildTopologyGraph({ ...input, data: { ...input.data, vnicAttachments: FAILED } });
+    expect(nodeOf(nodes, INSTANCE_1).parentId).toBe(SUBNET_A);
+  });
+
+  it("primary VNICのIPを詳細に出す", () => {
+    const { nodes } = buildTopologyGraph(
+      withVnic(fullInput(), { "subnet-id": SUBNET_A, "private-ip": "10.0.1.10", "public-ip": "203.0.113.50" }),
+    );
+    const node = nodeOf(nodes, INSTANCE_1);
+    expect(detailValue(node, "Private IP")).toBe("10.0.1.10");
+    expect(detailValue(node, "Public IP")).toBe("203.0.113.50");
+  });
+
+  it("public-ipがnullならPublic IP行を出さない", () => {
+    const { nodes } = buildTopologyGraph(
+      withVnic(fullInput(), { "subnet-id": SUBNET_A, "private-ip": "10.0.1.10", "public-ip": null }),
+    );
+    expect(detailValue(nodeOf(nodes, INSTANCE_1), "Public IP")).toBeUndefined();
+  });
+});
+
+describe("buildTopologyGraph ボリュームアタッチメント", () => {
+  /** attachmentだけを差し替えた入力(他はfullInputのまま)。 */
+  function withAttachments(attachments: Record<string, unknown>[]): TopologyGraphInput {
+    const input = fullInput();
+    return { ...input, data: { ...input.data, volumeAttachments: anyOk(attachments) } };
+  }
+
+  function attachment(volumeId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: `${volumeId}-attachment`,
+      "instance-id": INSTANCE_1,
+      "volume-id": volumeId,
+      "lifecycle-state": "ATTACHED",
+      ...overrides,
+    };
+  }
+
+  it("PV経由で出ているVolumeノードへ合流し、ノードを増やさない", () => {
+    const { nodes, edges } = buildTopologyGraph(fullInput());
+    expect(nodes.filter((node) => node.kind === "volume").map((node) => node.id)).toEqual([VOLUME_1]);
+    expect(edges).toContainEqual({
+      id: `attachment|${INSTANCE_1}|${VOLUME_1}`,
+      source: INSTANCE_1,
+      target: VOLUME_1,
+      kind: "attachment",
+    });
+  });
+
+  it("PVから辿れないVolumeはノードを新規に作り、Subnet配下には置かない", () => {
+    const input = withAttachments([attachment(VOLUME_1), attachment(VOLUME_2)]);
+    const volumes = anyOk([
+      { id: VOLUME_1, "display-name": "pvc-vol", "lifecycle-state": "AVAILABLE", "size-in-gbs": 50 },
+      { id: VOLUME_2, "display-name": "data-vol", "lifecycle-state": "AVAILABLE", "size-in-gbs": 100 },
+    ]);
+    const { nodes, edges } = buildTopologyGraph({ ...input, data: { ...input.data, volumes } });
+    const node = nodeOf(nodes, VOLUME_2);
+    expect(node).toMatchObject({ kind: "volume", label: "data-vol", status: "ok" });
+    expect(node.parentId).toBeUndefined();
+    expect(detailValue(node, "Size")).toBe("100 GB");
+    expect(detailValue(node, "State")).toBe("AVAILABLE");
+    expect(detailValue(node, "OCID")).toBe(VOLUME_2);
+    expect(edges).toContainEqual({
+      id: `attachment|${INSTANCE_1}|${VOLUME_2}`,
+      source: INSTANCE_1,
+      target: VOLUME_2,
+      kind: "attachment",
+    });
+  });
+
+  it("Volume一覧に無くattachmentで生えたVolumeにもPVからエッジを引く", () => {
+    const input = fullInput();
+    const { nodes, edges } = buildTopologyGraph({ ...input, data: { ...input.data, volumes: anyOk([]) } });
+    expect(nodeOf(nodes, VOLUME_1).label).toBe(VOLUME_1);
+    expect(edges).toContainEqual({
+      id: `pv-storage|k8s-pv:pv-block|${VOLUME_1}`,
+      source: "k8s-pv:pv-block",
+      target: VOLUME_1,
+      kind: "pv-storage",
+    });
+  });
+
+  it("参照先Volumeがどこにも無ければPVからのエッジは出ない", () => {
+    const input = fullInput();
+    const data = { ...input.data, volumes: anyOk([]), volumeAttachments: anyOk([]) };
+    const { nodes, edges } = buildTopologyGraph({ ...input, data });
+    expect(nodes.some((node) => node.id === VOLUME_1)).toBe(false);
+    expect(edges.some((edge) => edge.kind === "pv-storage" && edge.target === VOLUME_1)).toBe(false);
+  });
+
+  it("Volume一覧に無いOCIDでもOCIDラベルのノードを作る", () => {
+    const { nodes } = buildTopologyGraph(withAttachments([attachment(VOLUME_2)]));
+    expect(nodeOf(nodes, VOLUME_2)).toMatchObject({ kind: "volume", label: VOLUME_2, status: "unknown" });
+  });
+
+  it("ATTACHED以外とクラスタ外Instanceのattachmentは引かない", () => {
+    const other = "ocid1.instance.oc1.ap-tokyo-1.other";
+    const { nodes, edges } = buildTopologyGraph(
+      withAttachments([
+        attachment(VOLUME_2, { "lifecycle-state": "DETACHED" }),
+        attachment(VOLUME_2, { id: "att-other", "instance-id": other }),
+      ]),
+    );
+    expect(edges.some((edge) => edge.kind === "attachment")).toBe(false);
+    expect(nodes.some((node) => node.id === VOLUME_2)).toBe(false);
+  });
+
+  it("集約ノードへ畳まれたInstanceのattachmentは集約ノード発になる", () => {
+    const input = fullInput();
+    const ids = Array.from({ length: 11 }, (_, index) => `ocid1.instance.oc1.ap-tokyo-1.i${index + 10}`);
+    const data = {
+      ...input.data,
+      instances: anyOk(ids.map((id, index) => ({ id, "display-name": `node-${index}` }))),
+      volumeAttachments: anyOk(
+        ids.map((id) => ({ id: `${id}-att`, "instance-id": id, "volume-id": VOLUME_2, "lifecycle-state": "ATTACHED" })),
+      ),
+    };
+    const { edges } = buildTopologyGraph({
+      ...input,
+      data,
+      nodes: ids.map((id, index) => k8sNode(`node-${index}`, id, [`10.0.1.${index + 20}`])),
+    });
+    expect(edges.filter((edge) => edge.kind === "attachment")).toEqual([
+      {
+        id: `attachment|instance-group:${SUBNET_A}|${VOLUME_2}`,
+        source: `instance-group:${SUBNET_A}`,
+        target: VOLUME_2,
+        kind: "attachment",
+      },
+    ]);
+  });
+
+  it("attachment一覧の失敗はVolumeノードとattachmentエッジの欠落になる", () => {
+    const input = fullInput();
+    const { missing } = buildTopologyGraph({ ...input, data: { ...input.data, volumeAttachments: FAILED } });
+    expect(missing).toEqual([
+      { target: "node", kind: "volume", sections: ["volumeAttachments"] },
+      { target: "edge", kind: "attachment", sections: ["volumeAttachments"] },
+    ]);
+  });
+});
+
+describe("buildTopologyGraph Volumeのバックアップポリシー", () => {
+  it("割当ありは名前、照会済みで未割当はNoneを出す", () => {
+    const input = fullInput();
+    expect(detailValue(nodeOf(buildTopologyGraph(input).nodes, VOLUME_1), "Backup Policy")).toBe("gold");
+
+    const data = { ...input.data, volumeBackupPolicies: { [VOLUME_1]: ok({}) } };
+    const { nodes } = buildTopologyGraph({ ...input, data });
+    expect(detailValue(nodeOf(nodes, VOLUME_1), "Backup Policy")).toBe("None");
+  });
+
+  it("照会自体が走っていないVolumeはNot queriedとしてNoneと書き分ける", () => {
+    const input = fullInput();
+    const data = {
+      ...input.data,
+      volumeAttachments: anyOk([
+        { id: "att-2", "instance-id": INSTANCE_1, "volume-id": VOLUME_2, "lifecycle-state": "ATTACHED" },
+      ]),
+    };
+    const { nodes } = buildTopologyGraph({ ...input, data });
+    expect(detailValue(nodeOf(nodes, VOLUME_2), "Backup Policy")).toBe("Not queried");
+  });
+
+  it("照会が失敗したVolumeは行を出さない(欠落バナー側で示す)", () => {
+    const input = fullInput();
+    const data = { ...input.data, volumeBackupPolicies: { [VOLUME_1]: FAILED } };
+    const { nodes } = buildTopologyGraph({ ...input, data });
+    expect(detailValue(nodeOf(nodes, VOLUME_1), "Backup Policy")).toBeUndefined();
+  });
+});
+
+describe("buildTopologyGraph Instanceのshape", () => {
+  function instanceNode(instance: Record<string, unknown>): TopologyNode {
+    const input = fullInput();
+    const { nodes } = buildTopologyGraph({
+      ...input,
+      data: { ...input.data, instances: anyOk([{ id: INSTANCE_1, "display-name": "node-1", ...instance }]) },
+    });
+    return nodeOf(nodes, INSTANCE_1);
+  }
+
+  it("shape-configをShape行とラベル要約に併記する", () => {
+    const node = instanceNode({
+      shape: "VM.Standard.E4.Flex",
+      "shape-config": { ocpus: 2, "memory-in-gbs": 16 },
+    });
+    expect(detailValue(node, "Shape")).toBe("VM.Standard.E4.Flex 2 OCPU / 16 GB");
+    expect(node.summary).toBe("VM.Standard.E4.Flex 2c/16G");
+  });
+
+  it("shape-config欠落時はshapeだけを出す", () => {
+    const node = instanceNode({ shape: "VM.Standard.E4.Flex" });
+    expect(detailValue(node, "Shape")).toBe("VM.Standard.E4.Flex");
+    expect(node.summary).toBe("VM.Standard.E4.Flex");
+  });
+
+  it("shapeもshape-configも無ければShape行も要約も持たない", () => {
+    const node = instanceNode({});
+    expect(detailValue(node, "Shape")).toBeUndefined();
+    expect(node.summary).toBeUndefined();
+  });
+
+  it("AD/FDを短縮してラベル要約の末尾に添える", () => {
+    const node = instanceNode({
+      shape: "VM.Standard.E4.Flex",
+      "shape-config": { ocpus: 2, "memory-in-gbs": 16 },
+      "availability-domain": "xxxx:AP-TOKYO-1-AD-1",
+      "fault-domain": "FAULT-DOMAIN-2",
+    });
+    expect(node.summary).toBe("VM.Standard.E4.Flex 2c/16G · AD-1 / FD-2");
+  });
+
+  it("短縮できないAD/FDは原文のまま出す", () => {
+    const node = instanceNode({ "availability-domain": "xxxx:AP-TOKYO-1", "fault-domain": "FD_2" });
+    expect(node.summary).toBe("xxxx:AP-TOKYO-1 / FD_2");
+  });
+
+  it("片方だけのAD/FDはその1つだけを出す", () => {
+    expect(instanceNode({ "fault-domain": "FAULT-DOMAIN-3" }).summary).toBe("FD-3");
+    expect(instanceNode({ shape: "VM.Standard.E4.Flex", "availability-domain": "xxxx:AP-TOKYO-1-AD-2" }).summary).toBe(
+      "VM.Standard.E4.Flex · AD-2",
+    );
+  });
+});
+
+describe("buildTopologyGraph Subnet/Volumeのラベル要約", () => {
+  it("SubnetのCIDRとVolumeの容量をsublabelに出す", () => {
+    const { nodes } = buildTopologyGraph(fullInput());
+    expect(nodeOf(nodes, SUBNET_A).summary).toBe("10.0.1.0/24");
+    expect(nodeOf(nodes, VOLUME_1).summary).toBe("50 GB");
+  });
+
+  it("VCNのCIDRもsublabelに出す", () => {
+    const { nodes } = buildTopologyGraph(fullInput());
+    expect(nodeOf(nodes, VCN).summary).toBe("10.0.0.0/16");
+  });
+
+  it("VCN本体が取れていなければsublabelを持たない", () => {
+    const input = fullInput();
+    const { nodes } = buildTopologyGraph({ ...input, data: { ...input.data, vcns: {} } });
+    expect(nodeOf(nodes, VCN).summary).toBeUndefined();
+  });
+
+  it("複数CIDRのSubnet/VCNは先頭CIDR + 残り件数に畳む", () => {
+    const input = fullInput();
+    const data = {
+      ...input.data,
+      vcns: { [VCN]: anyOk({ id: VCN, "cidr-blocks": ["10.0.0.0/16", "10.1.0.0/16"] }) },
+      subnets: {
+        ...input.data.subnets,
+        [SUBNET_A]: anyOk({
+          id: SUBNET_A,
+          "vcn-id": VCN,
+          "cidr-block": "10.0.1.0/24",
+          "ipv6-cidr-blocks": ["2001:db8:0:4500::/64"],
+        }),
+      },
+    };
+    const { nodes } = buildTopologyGraph({ ...input, data });
+    expect(nodeOf(nodes, VCN).summary).toBe("10.0.0.0/16 +1");
+    expect(nodeOf(nodes, SUBNET_A).summary).toBe("10.0.1.0/24 +1");
+  });
+
+  it("容量が分からないVolumeはsublabelを持たない", () => {
+    const input = fullInput();
+    const { nodes } = buildTopologyGraph({ ...input, data: { ...input.data, volumes: anyOk([]) } });
+    expect(nodeOf(nodes, VOLUME_1).summary).toBeUndefined();
+  });
+});
+
 describe("buildTopologyGraph 欠落種別", () => {
   it("全セクション成功なら欠落なし", () => {
     expect(buildTopologyGraph(fullInput()).missing).toEqual([]);
@@ -836,7 +1201,7 @@ describe("buildTopologyGraph 欠落種別", () => {
       { target: "edge", kind: "volume-backup", sections: ["volumes"] },
       { target: "edge", kind: "route", sections: ["gateways"] },
     ]);
-    expect(nodes.some((node) => node.kind === "volume")).toBe(false);
+    expect(nodeOf(nodes, VOLUME_1)).toMatchObject({ kind: "volume", label: VOLUME_1, status: "unknown" });
   });
 
   it("ClusterOciDataに現れないlist失敗はfailedSectionsで補える", () => {
@@ -858,6 +1223,14 @@ describe("buildTopologyGraph 欠落種別", () => {
       { target: "edge", kind: "waf-lb", sections: ["taggedResources"] },
       { target: "edge", kind: "service-lb", sections: ["taggedResources"] },
     ]);
+  });
+
+  it("VNIC取得の失敗はInstanceノードでなく詳細(配置根拠)の欠落として扱う", () => {
+    const input = fullInput();
+    const { missing, nodes } = buildTopologyGraph({ ...input, data: { ...input.data, vnicAttachments: FAILED } });
+    expect(missing).toContainEqual({ target: "detail", kind: "instance", sections: ["vnics"] });
+    expect(missing).not.toContainEqual({ target: "node", kind: "instance", sections: ["vnics"] });
+    expect(nodes.some((node) => node.id === INSTANCE_1)).toBe(true);
   });
 
   it("cluster失敗はVCNノードの欠落として扱う", () => {

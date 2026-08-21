@@ -1,3 +1,4 @@
+import { observable, runInAction } from "mobx";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { resolveAnchor } from "../fetch/anchor";
 import * as fetchModule from "../fetch/fetch";
@@ -13,6 +14,9 @@ import {
   fetchVcnNsgs,
   fetchVcnRouteTables,
   fetchVcnSubnets,
+  fetchVnic,
+  fetchVnicAttachments,
+  fetchVolumeAttachments,
 } from "../fetch/fetch";
 import type { TopologySection } from "../match/page-sections";
 import { OciClusterStore, type TopologySectionStatus } from "./oci-cluster-store";
@@ -21,6 +25,7 @@ import { OciClusterStore, type TopologySectionStatus } from "./oci-cluster-store
 const k8s = vi.hoisted(() => ({
   nodesStore: {
     loadAll: () => Promise.resolve(),
+    isLoaded: true,
     items: [{ spec: { providerID: "oci://ocid1.instance.oc1..aaaa1" } }],
   },
   persistentVolumeStore: { loadAll: () => Promise.resolve(), items: [] as unknown[] },
@@ -66,6 +71,9 @@ const fetchNsgWithRulesMock = fetchNsgWithRules as unknown as Mock;
 const fetchVcnMock = fetchVcn as unknown as Mock;
 const fetchFileSystemMock = fetchFileSystem as unknown as Mock;
 const fetchFssExportMock = fetchFssExport as unknown as Mock;
+const fetchVnicAttachmentsMock = fetchVnicAttachments as unknown as Mock;
+const fetchVnicMock = fetchVnic as unknown as Mock;
+const fetchVolumeAttachmentsMock = fetchVolumeAttachments as unknown as Mock;
 
 /** 保留中のfetchを1件ずつ解決するためのキュー。 */
 function pendingQueue(mock: Mock): ((result: unknown) => void)[] {
@@ -95,6 +103,8 @@ beforeEach(() => {
   resolveAnchorMock.mockReset().mockResolvedValue(ANCHOR);
   k8s.persistentVolumeStore.loadAll = () => Promise.resolve();
   k8s.persistentVolumeStore.items = [];
+  k8s.nodesStore.items = [{ spec: { providerID: "oci://ocid1.instance.oc1..aaaa1" } }];
+  k8s.nodesStore.isLoaded = true;
 });
 
 describe("pv-storageのFSS解決", () => {
@@ -283,6 +293,263 @@ describe("networkページの型別list", () => {
   });
 });
 
+/** topologyページのVNIC Map(セクション確定前は空)。 */
+function vnicsOf(store: OciClusterStore): Record<string, unknown> {
+  const state = store.getState(CLUSTER_KEY, "topology");
+  return state.status === "loaded" ? state.data.vnics : {};
+}
+
+describe("topologyページのVNIC取得", () => {
+  const INSTANCE_ID = "ocid1.instance.oc1..aaaa1";
+  const OTHER_INSTANCE_ID = "ocid1.instance.oc1..other";
+  const VNIC_ID = "ocid1.vnic.oc1..aaaa1";
+  const OTHER_VNIC_ID = "ocid1.vnic.oc1..other";
+
+  function attachment(instanceId: string, vnicId: string, lifecycleState = "ATTACHED"): unknown {
+    return {
+      id: `${vnicId}-attachment`,
+      "instance-id": instanceId,
+      "vnic-id": vnicId,
+      "lifecycle-state": lifecycleState,
+    };
+  }
+
+  it("クラスタのNodeに対応するInstanceのVNICだけをgetする", async () => {
+    fetchVnicAttachmentsMock.mockResolvedValue({
+      ok: true,
+      data: [attachment(INSTANCE_ID, VNIC_ID), attachment(OTHER_INSTANCE_ID, OTHER_VNIC_ID)],
+    });
+    fetchVnicMock.mockResolvedValue({ ok: true, data: { id: VNIC_ID, "is-primary": true } });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVnicAttachmentsMock).toHaveBeenCalledWith(ANCHOR.compartmentId, "");
+    expect(fetchVnicMock.mock.calls.map((call) => call[0])).toEqual([VNIC_ID]);
+    const state = store.getState(CLUSTER_KEY, "topology");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.data.vnics[VNIC_ID]).toEqual({ ok: true, data: { id: VNIC_ID, "is-primary": true } });
+  });
+
+  it("切り離し済みのattachmentはVNIC getへ進まない", async () => {
+    fetchVnicAttachmentsMock.mockResolvedValue({
+      ok: true,
+      data: [attachment(INSTANCE_ID, VNIC_ID, "DETACHED")],
+    });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVnicMock).not.toHaveBeenCalled();
+  });
+
+  it("再取得で一覧から消えたVNICはMapから落ちる", async () => {
+    const SECOND_VNIC_ID = "ocid1.vnic.oc1..aaaa2";
+    fetchVnicAttachmentsMock.mockResolvedValue({
+      ok: true,
+      data: [attachment(INSTANCE_ID, VNIC_ID), attachment(INSTANCE_ID, SECOND_VNIC_ID)],
+    });
+    fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(Object.keys(vnicsOf(store))).toEqual([VNIC_ID, SECOND_VNIC_ID]);
+
+    fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+    await store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(Object.keys(vnicsOf(store))).toEqual([VNIC_ID]);
+  });
+
+  it("attachment一覧の失敗では既存のVNICを刈り込まない", async () => {
+    fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+    fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    fetchVnicAttachmentsMock.mockResolvedValue({
+      ok: false,
+      kind: "forbidden_or_not_found",
+      raw: { message: "denied" },
+    });
+    await store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(Object.keys(vnicsOf(store))).toEqual([VNIC_ID]);
+  });
+
+  it("ポーリングは一覧だけ取り直し、未取得のVNIC本体だけをgetする", async () => {
+    const SECOND_VNIC_ID = "ocid1.vnic.oc1..aaaa2";
+    fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+    fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(fetchVnicMock.mock.calls.map((call) => call[0])).toEqual([VNIC_ID]);
+
+    await store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+    expect(fetchVnicAttachmentsMock).toHaveBeenCalledTimes(2);
+    expect(fetchVnicMock.mock.calls.map((call) => call[0])).toEqual([VNIC_ID]);
+
+    fetchVnicAttachmentsMock.mockResolvedValue({
+      ok: true,
+      data: [attachment(INSTANCE_ID, VNIC_ID), attachment(INSTANCE_ID, SECOND_VNIC_ID)],
+    });
+    await store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+    expect(fetchVnicMock.mock.calls.map((call) => call[0])).toEqual([VNIC_ID, SECOND_VNIC_ID]);
+  });
+
+  it("手動更新はVNIC本体を全件取り直す", async () => {
+    fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+    fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    store.refresh(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVnicMock.mock.calls.map((call) => call[0])).toEqual([VNIC_ID, VNIC_ID]);
+  });
+
+  it("バックグラウンドの手動更新はVNIC本体を全件取り直す", async () => {
+    fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+    fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    await store.pollRefresh(CLUSTER_KEY, "topology", true);
+
+    expect(fetchVnicMock.mock.calls.map((call) => call[0])).toEqual([VNIC_ID, VNIC_ID]);
+  });
+
+  it("K8s Nodeを1件も読めていない回は確定させず、既存のVNICも刈り込まない", async () => {
+    fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+    fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(Object.keys(vnicsOf(store))).toEqual([VNIC_ID]);
+
+    k8s.nodesStore.isLoaded = false;
+    k8s.nodesStore.items = [];
+    await store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+
+    // 列挙元を叩かずに戻るため、attachment listの呼び出しも増えない。
+    expect(fetchVnicAttachmentsMock).toHaveBeenCalledTimes(1);
+    expect(Object.keys(vnicsOf(store))).toEqual([VNIC_ID]);
+  });
+
+  it("K8s Nodeがロード済みで0件なら空のVNICセクションとして確定する", async () => {
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    k8s.nodesStore.items = [];
+    await store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVnicAttachmentsMock).toHaveBeenCalledTimes(1);
+    expect(progressOf(store).vnics).toBe("ok");
+    expect(settled(store, "topology")).toBe(true);
+    const state = store.getState(CLUSTER_KEY, "topology");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.data.vnicAttachments).toEqual({ ok: true, data: [] });
+    expect(state.data.vnics).toEqual({});
+  });
+
+  it("VNIC取得中の例外はvnicsセクションの失敗として確定する", async () => {
+    setUpTopologyCluster();
+    fetchVnicAttachmentsMock.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(progressOf(store).vnics).toBe("failed");
+    expect(settled(store, "topology")).toBe(true);
+  });
+
+  it("attachment一覧の失敗はvnicsセクションの失敗として確定する", async () => {
+    fetchVnicAttachmentsMock.mockResolvedValue({
+      ok: false,
+      kind: "forbidden_or_not_found",
+      raw: { message: "denied" },
+    });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVnicMock).not.toHaveBeenCalled();
+    expect(progressOf(store).vnics).toBe("failed");
+    expect(settled(store, "topology")).toBe(true);
+  });
+});
+
+describe("topologyページのボリュームアタッチメント取得", () => {
+  it("アンカーcompartmentの一括listを1回だけ叩く", async () => {
+    fetchVolumeAttachmentsMock.mockResolvedValue({ ok: true, data: [] });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(fetchVolumeAttachmentsMock.mock.calls).toEqual([[ANCHOR.compartmentId, ""]]);
+    expect(progressOf(store).volumeAttachments).toBe("ok");
+  });
+
+  it("他ページでは叩かず、topologyの結果はvolumeAttachmentsとして載る", async () => {
+    const attachments = [{ id: "ocid1.volumeattachment.oc1..a1" }];
+    fetchVolumeAttachmentsMock.mockResolvedValue({ ok: true, data: attachments });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "pv-storage");
+    await settle();
+    expect(fetchVolumeAttachmentsMock).not.toHaveBeenCalled();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    const state = store.getState(CLUSTER_KEY, "topology");
+    expect(state.status).toBe("loaded");
+    if (state.status !== "loaded") return;
+    expect(state.data.volumeAttachments).toEqual({ ok: true, data: attachments });
+  });
+
+  it("list失敗はvolumeAttachmentsセクションの失敗として確定する", async () => {
+    fetchVolumeAttachmentsMock.mockResolvedValue({
+      ok: false,
+      kind: "forbidden_or_not_found",
+      raw: { message: "denied" },
+    });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(progressOf(store).volumeAttachments).toBe("failed");
+    expect(settled(store, "topology")).toBe(true);
+  });
+});
+
 describe("セクション単位の段階表示", () => {
   it("取得中セクションはkind=loading、他ページ専用セクションはnot_requestedで返る", async () => {
     const store = new OciClusterStore();
@@ -431,11 +698,13 @@ describe("topologyのセクション進行状態", () => {
         "cluster",
         "taggedResources",
         "instances",
+        "vnics",
         "nodePools",
         "lbs",
         "nlbs",
         "wafs",
         "volumes",
+        "volumeAttachments",
         "volumeBackupPolicies",
         "fileSystems",
         "fssSnapshotPolicies",
@@ -504,6 +773,23 @@ describe("topologyのセクション進行状態", () => {
 });
 
 describe("topologyの確定スナップショット", () => {
+  it("同じクラスタの重複pollは進行中の1サイクルへ集約する", async () => {
+    setUpTopologyCluster();
+    const store = new OciClusterStore();
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+
+    const clusters = pendingQueue(fetchClusterMock);
+    const first = store.pollRefresh(CLUSTER_KEY, "topology");
+    const second = store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+
+    expect(second).toBe(first);
+    expect(fetchClusterMock).toHaveBeenCalledTimes(2);
+    clusters[0]?.({ ok: true, data: {} });
+    await first;
+  });
+
   it("全必要セクション確定まで現れず、確定時に世代1で現れる", async () => {
     setUpTopologyCluster();
     const instances = pendingQueue(fetchInstancesMock);
@@ -559,6 +845,36 @@ describe("topologyの確定スナップショット", () => {
     expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
   });
 
+  it("ポーリング中の再マウントでは新旧混在のスナップショットを確定させない", async () => {
+    setUpTopologyCluster();
+    fetchInstancesMock.mockResolvedValue({ ok: true, data: [{ id: "old" }] });
+    const store = new OciClusterStore();
+
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+
+    const instances = pendingQueue(fetchInstancesMock);
+    fetchVolumeAttachmentsMock.mockResolvedValue({ ok: true, data: [{ id: "att-new" }] });
+    const poll = store.pollRefresh(CLUSTER_KEY, "topology");
+    await settle();
+
+    // 再マウント。進行中のforceサイクルを待たずに確定させると、instancesだけ旧世代の図になる。
+    store.ensureLoaded(CLUSTER_KEY, "topology");
+    await settle();
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+    expect(store.getTopologySnapshot(CLUSTER_KEY)?.data.instances).toEqual({ ok: true, data: [{ id: "old" }] });
+
+    instances[0]?.({ ok: true, data: [{ id: "new" }] });
+    await poll;
+    await settle();
+
+    const snapshot = store.getTopologySnapshot(CLUSTER_KEY);
+    expect(snapshot?.generation).toBe(2);
+    expect(snapshot?.data.instances).toEqual({ ok: true, data: [{ id: "new" }] });
+    expect(snapshot?.data.volumeAttachments).toEqual({ ok: true, data: [{ id: "att-new" }] });
+  });
+
   it("refreshはスナップショットを捨て、採番は戻さない", async () => {
     setUpTopologyCluster();
     const store = new OciClusterStore();
@@ -576,5 +892,132 @@ describe("topologyの確定スナップショット", () => {
     await settle();
 
     expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(2);
+  });
+});
+
+describe("topologyのK8s Node追従", () => {
+  const INSTANCE_ID = "ocid1.instance.oc1..aaaa1";
+  const NEW_INSTANCE_ID = "ocid1.instance.oc1..aaaa2";
+  const VNIC_ID = "ocid1.vnic.oc1..aaaa1";
+  const NEW_VNIC_ID = "ocid1.vnic.oc1..aaaa2";
+
+  function attachment(instanceId: string, vnicId: string): unknown {
+    return { id: `${vnicId}-attachment`, "instance-id": instanceId, "vnic-id": vnicId, "lifecycle-state": "ATTACHED" };
+  }
+
+  it("Node集合が変わるとVNICを取り直し、スナップショットを確定し直す", async () => {
+    vi.useFakeTimers();
+    try {
+      setUpTopologyCluster();
+      // 監視はmobxのreactionのため、Node一覧はobservableでないと変化を観測できない。
+      const nodeItems = observable.array([{ spec: { providerID: `oci://${INSTANCE_ID}` } }]);
+      k8s.nodesStore.items = nodeItems;
+      fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+      fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+      const store = new OciClusterStore();
+
+      store.ensureLoaded(CLUSTER_KEY, "topology");
+      await vi.advanceTimersByTimeAsync(50);
+      expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+      expect(Object.keys(vnicsOf(store))).toEqual([VNIC_ID]);
+
+      fetchVnicAttachmentsMock.mockResolvedValue({
+        ok: true,
+        data: [attachment(INSTANCE_ID, VNIC_ID), attachment(NEW_INSTANCE_ID, NEW_VNIC_ID)],
+      });
+      runInAction(() => nodeItems.push({ spec: { providerID: `oci://${NEW_INSTANCE_ID}` } }));
+      await vi.advanceTimersByTimeAsync(2500);
+
+      expect(Object.keys(vnicsOf(store))).toEqual([VNIC_ID, NEW_VNIC_ID]);
+      expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(2);
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Node追従は進行中のpoll完了前にスナップショットを確定しない", async () => {
+    vi.useFakeTimers();
+    try {
+      setUpTopologyCluster();
+      const nodeItems = observable.array([{ spec: { providerID: `oci://${INSTANCE_ID}` } }]);
+      k8s.nodesStore.items = nodeItems;
+      fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+      fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+      const store = new OciClusterStore();
+
+      store.ensureLoaded(CLUSTER_KEY, "topology");
+      await vi.advanceTimersByTimeAsync(50);
+      expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+
+      const instances = pendingQueue(fetchInstancesMock);
+      const poll = store.pollRefresh(CLUSTER_KEY, "topology");
+      await vi.advanceTimersByTimeAsync(50);
+      fetchVnicAttachmentsMock.mockResolvedValue({
+        ok: true,
+        data: [attachment(INSTANCE_ID, VNIC_ID), attachment(NEW_INSTANCE_ID, NEW_VNIC_ID)],
+      });
+      runInAction(() => nodeItems.push({ spec: { providerID: `oci://${NEW_INSTANCE_ID}` } }));
+      await vi.advanceTimersByTimeAsync(2500);
+
+      expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(1);
+      instances[0]?.({ ok: true, data: [{ id: INSTANCE_ID }, { id: NEW_INSTANCE_ID }] });
+      await poll;
+      await vi.advanceTimersByTimeAsync(50);
+      expect(store.getTopologySnapshot(CLUSTER_KEY)?.generation).toBe(2);
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Node集合が変わらなければ取り直さない", async () => {
+    vi.useFakeTimers();
+    try {
+      setUpTopologyCluster();
+      const nodeItems = observable.array([{ spec: { providerID: `oci://${INSTANCE_ID}` } }]);
+      k8s.nodesStore.items = nodeItems;
+      fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+      fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+      const store = new OciClusterStore();
+
+      store.ensureLoaded(CLUSTER_KEY, "topology");
+      await vi.advanceTimersByTimeAsync(50);
+
+      // 同じNodeの再掲(watchの再送)ではproviderID集合が変わらない。
+      runInAction(() => nodeItems.replace([{ spec: { providerID: `oci://${INSTANCE_ID}` } }]));
+      await vi.advanceTimersByTimeAsync(2500);
+
+      expect(fetchVnicAttachmentsMock).toHaveBeenCalledTimes(1);
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("クラスタ切替時は旧クラスタの監視を解除する", async () => {
+    vi.useFakeTimers();
+    try {
+      setUpTopologyCluster();
+      const nodeItems = observable.array([{ spec: { providerID: `oci://${INSTANCE_ID}` } }]);
+      k8s.nodesStore.items = nodeItems;
+      fetchVnicAttachmentsMock.mockResolvedValue({ ok: true, data: [attachment(INSTANCE_ID, VNIC_ID)] });
+      fetchVnicMock.mockImplementation((vnicId: string) => Promise.resolve({ ok: true, data: { id: vnicId } }));
+      const store = new OciClusterStore();
+
+      store.ensureLoaded(CLUSTER_KEY, "topology");
+      await vi.advanceTimersByTimeAsync(50);
+      store.ensureLoaded("cluster-2", "topology");
+      await vi.advanceTimersByTimeAsync(50);
+      expect(fetchVnicAttachmentsMock).toHaveBeenCalledTimes(2);
+
+      runInAction(() => nodeItems.push({ spec: { providerID: `oci://${NEW_INSTANCE_ID}` } }));
+      await vi.advanceTimersByTimeAsync(2500);
+
+      expect(fetchVnicAttachmentsMock).toHaveBeenCalledTimes(3);
+      store.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,5 +1,6 @@
 const OCI_PROVIDER_PREFIX = "oci://";
-const INSTANCE_OCID_PREFIX = "ocid1.instance.";
+// CLI引数へ渡す値。前置一致だけだと末尾に$(...)を仕込める(シェル経由のoci互換コマンドで展開される)。
+const INSTANCE_OCID_PATTERN = /^ocid1\.instance\.[a-z0-9]+\.[a-z0-9_-]*\.[a-z0-9]+$/;
 
 export type ProviderIdParseResult = { isOke: true; instanceId: string } | { isOke: false };
 
@@ -12,7 +13,7 @@ export function parseProviderId(providerId: string | undefined | null): Provider
   const stripped = providerId.startsWith(OCI_PROVIDER_PREFIX)
     ? providerId.slice(OCI_PROVIDER_PREFIX.length)
     : providerId;
-  if (!stripped.startsWith(INSTANCE_OCID_PREFIX)) return { isOke: false };
+  if (!INSTANCE_OCID_PATTERN.test(stripped)) return { isOke: false };
   return { isOke: true, instanceId: stripped };
 }
 

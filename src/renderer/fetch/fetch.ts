@@ -30,7 +30,10 @@ import type {
   OciSecurityList,
   OciSubnet,
   OciVcn,
+  OciVnic,
+  OciVnicAttachment,
   OciVolume,
+  OciVolumeAttachment,
   OciVolumeBackupPolicy,
   OciWafPolicy,
   OciWafSummary,
@@ -39,10 +42,16 @@ import type {
 export interface ClusterOciData {
   cluster: OciResult<OciCluster>;
   instances: OciResult<OciInstance[]>;
+  /** Instance→VNICの対応(compartment一括。クラスタ外Instanceの分も含む) */
+  vnicAttachments: OciResult<OciVnicAttachment[]>;
+  /** VNIC OCID→VNIC本体。primary VNICのsubnet-idがInstanceの配置根拠になる */
+  vnics: Record<string, OciResult<OciVnic>>;
   taggedResources: OciResult<OciResourceSummary[]>;
   nlbs: OciResult<OciNetworkLoadBalancerSummary[]>;
   lbs: OciResult<OciLoadBalancer[]>;
   volumes: OciResult<OciVolume[]>;
+  /** Instance→Block Volumeの対応(compartment一括。クラスタ外Instanceの分も含む) */
+  volumeAttachments: OciResult<OciVolumeAttachment[]>;
   fileSystems: Record<string, OciResult<OciFileSystem>>;
   /** Export OCID→FSS export。volumeHandleがExport OCIDのPVでFileSystem OCIDを解決する段 */
   fssExports: Record<string, OciResult<OciFssExport>>;
@@ -146,6 +155,27 @@ export function fetchCluster(clusterId: string, ociCliCommand: string): Promise<
 // #3 ノード詳細(nodesページ)。
 export function fetchInstances(compartmentId: string, ociCliCommand: string): Promise<OciResult<OciInstance[]>> {
   return toSectionResult(run(ociCommands.instanceList, { compartmentId }, ociCliCommand));
+}
+
+// #33 VNICアタッチメント一覧(topologyページ、Instance→primary VNICの解決元)。
+export function fetchVnicAttachments(
+  compartmentId: string,
+  ociCliCommand: string,
+): Promise<OciResult<OciVnicAttachment[]>> {
+  return toSectionResult(run(ociCommands.vnicAttachmentList, { compartmentId }, ociCliCommand));
+}
+
+// #34 VNIC本体(topologyページ、primary判定とIP表示。attachmentはIPを持たない)。
+export function fetchVnic(vnicId: string, ociCliCommand: string): Promise<OciResult<OciVnic>> {
+  return toSectionResult(run(ociCommands.vnicGet, { vnicId }, ociCliCommand));
+}
+
+// #35 ボリュームアタッチメント一覧(topologyページ、Instance→Volumeの紐付け元)。
+export function fetchVolumeAttachments(
+  compartmentId: string,
+  ociCliCommand: string,
+): Promise<OciResult<OciVolumeAttachment[]>> {
+  return toSectionResult(run(ociCommands.volumeAttachmentList, { compartmentId }, ociCliCommand));
 }
 
 // #4 タグ検索(service-lb/pv-storageページ共有)。

@@ -99,7 +99,7 @@
 - 対話プロンプト(`Do you want to create a new config file? [Y/n]:`)が出る経路があるため、
   子プロセスの stdin は必ず閉じる(`/dev/null`)。閉じていれば EOF で `Abort:` して即終了する
 
-## コマンド → ファイル対応(全 44 コマンド)
+## コマンド → ファイル対応(全 47 コマンド)
 
 `#` は [fetch.ts](../../fetch/fetch.ts) / [anchor.ts](../../fetch/anchor.ts) のコメント番号。
 OCID は下記サニタイズ済みのダミー値で表記している。
@@ -155,6 +155,9 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 | 30 | `fs export get --export-id …` | `stdout/30-fs-export-get.json` | 0 |
 | 31 | `bv volume get --volume-id …` | `stdout/31-bv-volume-get.json` | 0 |
 | 32 | `dns zone list --compartment-id … --scope GLOBAL --all` | (未採取) | - |
+| 33 | `compute vnic-attachment list --compartment-id … --all` | (未採取) | - |
+| 34 | `network vnic get --vnic-id …` | (未採取) | - |
+| 35 | `compute volume-attachment list --compartment-id … --all` | (未採取) | - |
 
 ## エラー・警告フィクスチャ
 
@@ -183,6 +186,8 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 | `oci` コマンド自体の起動失敗(ENOENT 等) | CLI の出力ではなく `execFile` の失敗であり、フィクスチャの対象外 |
 | タイムアウト / stdout サイズ超過 | 実行機側の挙動であり、フィクスチャの対象外 |
 | #32 `dns zone list --scope GLOBAL --all` の応答 | 実機未採取。OciDnsZone の id / name / lifecycle-state は API 仕様からの推測 |
+| #33 `compute vnic-attachment list` / #34 `network vnic get` の応答 | 実機未採取。OciVnicAttachment（instance-id / vnic-id / lifecycle-state）と OciVnic（subnet-id / private-ip / public-ip / is-primary）は API 仕様からの推測 |
+| #35 `compute volume-attachment list` の応答 | 実機未採取。OciVolumeAttachment（instance-id / volume-id / lifecycle-state / attachment-type / device / is-read-only）は API 仕様からの推測 |
 
 ## サニタイズ
 

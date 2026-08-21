@@ -18,11 +18,11 @@ describe("sectionsForPage", () => {
     expect(sectionsForPage("network")).toEqual(["nodePools", "taggedResources", "nlbs", "lbs", "wafs", "network"]);
   });
 
-  it("topologyページは他4ページのセクション和 + vcnを要求する", () => {
+  it("topologyページは他4ページのセクション和 + vcn + vnics + volumeAttachmentsを要求する", () => {
     const others = new Set(
       (["nodes", "service-lb", "pv-storage", "network"] as const).flatMap((page) => sectionsForPage(page)),
     );
-    expect(new Set(sectionsForPage("topology"))).toEqual(new Set([...others, "vcn"]));
+    expect(new Set(sectionsForPage("topology"))).toEqual(new Set([...others, "vcn", "vnics", "volumeAttachments"]));
   });
 });
 
@@ -32,11 +32,13 @@ describe("TOPOLOGY_SECTIONS", () => {
       "cluster",
       "taggedResources",
       "instances",
+      "vnics",
       "nodePools",
       "lbs",
       "nlbs",
       "wafs",
       "volumes",
+      "volumeAttachments",
       "volumeBackupPolicies",
       "fileSystems",
       "fssSnapshotPolicies",

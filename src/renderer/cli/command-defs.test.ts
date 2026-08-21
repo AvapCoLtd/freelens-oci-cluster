@@ -25,9 +25,10 @@ const LPG_ID = "ocid1.localpeeringgateway.oc1.ap-tokyo-1.aaaaexample0001";
 const DRG_ID = "ocid1.drg.oc1.ap-tokyo-1.aaaaexample0001";
 const LB_ID = "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const NLB_ID = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
+const VNIC_ID = "ocid1.vnic.oc1.ap-tokyo-1.aaaaexample0001";
 const QUERY_TEXT = `query all resources where (definedTags.namespace = 'Oracle-Tags' && definedTags.key = 'CreatedBy' && definedTags.value = '${CLUSTER_ID}')`;
 
-/** フィクスチャREADMEの対応表(全44コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
+/** フィクスチャREADMEの対応表(全47コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
 const CASES: { id: string; key: OciCommandName; actual: string[]; expected: string[] }[] = [
   {
     id: "1a",
@@ -328,6 +329,24 @@ const CASES: { id: string; key: OciCommandName; actual: string[]; expected: stri
     actual: ociCommands.dnsZoneList.args({ compartmentId: COMPARTMENT_ID }),
     expected: ["dns", "zone", "list", "--compartment-id", COMPARTMENT_ID, "--scope", "GLOBAL", "--all"],
   },
+  {
+    id: "33",
+    key: "vnicAttachmentList",
+    actual: ociCommands.vnicAttachmentList.args({ compartmentId: COMPARTMENT_ID }),
+    expected: ["compute", "vnic-attachment", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
+  },
+  {
+    id: "34",
+    key: "vnicGet",
+    actual: ociCommands.vnicGet.args({ vnicId: VNIC_ID }),
+    expected: ["network", "vnic", "get", "--vnic-id", VNIC_ID],
+  },
+  {
+    id: "35",
+    key: "volumeAttachmentList",
+    actual: ociCommands.volumeAttachmentList.args({ compartmentId: COMPARTMENT_ID }),
+    expected: ["compute", "volume-attachment", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
+  },
 ];
 
 describe("ociCommands", () => {
@@ -335,10 +354,10 @@ describe("ociCommands", () => {
     expect(actual).toEqual(expected);
   });
 
-  it("定義表はSDK呼び出し全44件を網羅し、余分な定義を持たない", () => {
-    expect(CASES).toHaveLength(44);
+  it("定義表はSDK呼び出し全47件を網羅し、余分な定義を持たない", () => {
+    expect(CASES).toHaveLength(47);
     expect(new Set(CASES.map((testCase) => testCase.key))).toEqual(new Set(Object.keys(ociCommands)));
-    expect(Object.keys(ociCommands)).toHaveLength(44);
+    expect(Object.keys(ociCommands)).toHaveLength(47);
   });
 
   it("手動ページングはsearchのみ(他はCLI側の--allで全件取得)", () => {
@@ -356,6 +375,8 @@ describe("ociCommands", () => {
     expect(new Set(collections)).toEqual(
       new Set([
         "instanceList",
+        "vnicAttachmentList",
+        "volumeAttachmentList",
         "taggedResourceSearch",
         "nlbList",
         "lbList",

@@ -24,10 +24,13 @@ function loadedState(data: Partial<ClusterOciData>): OciClusterViewState {
     data: {
       cluster: NOT_REQUESTED,
       instances: NOT_REQUESTED,
+      vnicAttachments: NOT_REQUESTED,
+      vnics: {},
       taggedResources: NOT_REQUESTED,
       nlbs: NOT_REQUESTED,
       lbs: NOT_REQUESTED,
       volumes: NOT_REQUESTED,
+      volumeAttachments: NOT_REQUESTED,
       nodePools: NOT_REQUESTED,
       wafs: NOT_REQUESTED,
       fileSystems: {},

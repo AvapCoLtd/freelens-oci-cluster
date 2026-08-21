@@ -39,7 +39,7 @@ const UNPLACED_KINDS: ReadonlySet<TopologyNodeKind> = new Set(["instance", "inst
 const TRAFFIC_BANDS: readonly TopologyNodeKind[] = ["k8s-service", "waf"];
 const TRAFFIC_KINDS: ReadonlySet<TopologyNodeKind> = new Set(TRAFFIC_BANDS);
 
-/** 右レーンへ回す種別。VCN側とはエッジで繋がらない独立成分。 */
+/** 右レーンへ回す種別。 */
 const STORAGE_KINDS: ReadonlySet<TopologyNodeKind> = new Set([
   "k8s-pv",
   "volume",
@@ -92,7 +92,7 @@ interface Gap {
   y: number;
 }
 
-/** 左レーン(トラフィック)と右レーン(ストレージ)の間。レーンを跨ぐエッジは無く、読み分けの余白。 */
+/** 左レーン(トラフィック)と右レーン(ストレージ)の間。Instance→Volumeのattachmentエッジがここを通る。 */
 const LANE_GAP = 120;
 /** レーンの中の行間・ノード間。 */
 const LANE_INNER_GAP: Gap = { x: 48, y: 56 };

@@ -24,6 +24,21 @@ describe("parseProviderId", () => {
   it("rejects non-instance OCIDs", () => {
     expect(parseProviderId("ocid1.volume.oc1.ap-tokyo-1.aaaaexample")).toEqual({ isOke: false });
   });
+
+  it("rejects a shell substitution appended to an instance OCID", () => {
+    expect(parseProviderId(`${INSTANCE_OCID}$(id)`)).toEqual({ isOke: false });
+    expect(parseProviderId(`oci://${INSTANCE_OCID};id`)).toEqual({ isOke: false });
+  });
+
+  it("rejects values with whitespace", () => {
+    expect(parseProviderId(`${INSTANCE_OCID} `)).toEqual({ isOke: false });
+    expect(parseProviderId(`${INSTANCE_OCID} --profile x`)).toEqual({ isOke: false });
+  });
+
+  it("rejects an instance OCID whose segments are incomplete", () => {
+    expect(parseProviderId("ocid1.instance.oc1.aaaaexample")).toEqual({ isOke: false });
+    expect(parseProviderId("ocid1.instance.")).toEqual({ isOke: false });
+  });
 });
 
 describe("pickAnchorInstanceId", () => {

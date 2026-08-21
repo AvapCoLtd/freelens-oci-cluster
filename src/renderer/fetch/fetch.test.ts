@@ -29,6 +29,9 @@ import {
   fetchVcnRouteTables,
   fetchVcnSecurityLists,
   fetchVcnSubnets,
+  fetchVnic,
+  fetchVnicAttachments,
+  fetchVolumeAttachments,
   fetchVolumeBackupPolicies,
   fetchVolumeBackupPolicyName,
   fetchVolumes,
@@ -63,6 +66,7 @@ const LPG_ID = "ocid1.localpeeringgateway.oc1.ap-tokyo-1.aaaaexample0001";
 const DRG_ID = "ocid1.drg.oc1.ap-tokyo-1.aaaaexample0001";
 const LB_ID = "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const NLB_ID = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
+const VNIC_ID = "ocid1.vnic.oc1.ap-tokyo-1.aaaaexample0001";
 const QUERY_TEXT = `query all resources where (definedTags.namespace = 'Oracle-Tags' && definedTags.key = 'CreatedBy' && definedTags.value = '${CLUSTER_ID}')`;
 const OCI_COMMAND = "wsl oci";
 const FORBIDDEN_OR_NOT_FOUND: OciResult<never> = {
@@ -130,6 +134,21 @@ const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }
     name: "fetchInstances",
     call: () => fetchInstances(COMPARTMENT_ID, OCI_COMMAND),
     expected: [{ command: "instanceList", params: { compartmentId: COMPARTMENT_ID } }],
+  },
+  {
+    name: "fetchVnicAttachments",
+    call: () => fetchVnicAttachments(COMPARTMENT_ID, OCI_COMMAND),
+    expected: [{ command: "vnicAttachmentList", params: { compartmentId: COMPARTMENT_ID } }],
+  },
+  {
+    name: "fetchVnic",
+    call: () => fetchVnic(VNIC_ID, OCI_COMMAND),
+    expected: [{ command: "vnicGet", params: { vnicId: VNIC_ID } }],
+  },
+  {
+    name: "fetchVolumeAttachments",
+    call: () => fetchVolumeAttachments(COMPARTMENT_ID, OCI_COMMAND),
+    expected: [{ command: "volumeAttachmentList", params: { compartmentId: COMPARTMENT_ID } }],
   },
   {
     name: "fetchTaggedResources",
@@ -352,7 +371,7 @@ describe("取得経路のコマンド割り当て", () => {
     expect(settingsSeen).toEqual([OCI_COMMAND]);
   });
 
-  it("定義表の全44コマンドが取得経路から呼ばれる", async () => {
+  it("定義表の全47コマンドが取得経路から呼ばれる", async () => {
     const used = new Set<string>();
     for (const mapping of MAPPINGS) {
       calls = [];
@@ -361,7 +380,7 @@ describe("取得経路のコマンド割り当て", () => {
       for (const call of calls) used.add(call.command);
     }
     expect(used).toEqual(new Set(Object.keys(ociCommands)));
-    expect(used.size).toBe(44);
+    expect(used.size).toBe(47);
   });
 });
 

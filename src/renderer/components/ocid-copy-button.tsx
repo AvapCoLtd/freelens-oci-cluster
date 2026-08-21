@@ -1,28 +1,11 @@
-import * as React from "react";
 import { Icon } from "./freelens-ui";
+import { type CopyStatus, useCopyFeedback } from "./use-copy-feedback";
 
-const COPIED_RESET_MS = 1500;
+const ICON: Record<CopyStatus, string> = { idle: "content_copy", copied: "done", failed: "error_outline" };
+const TOOLTIP: Record<CopyStatus, string> = { idle: "Copy OCID", copied: "Copied", failed: "Copy failed" };
 
 export function OcidCopyButton({ ocid }: { ocid: string }) {
-  const [copied, setCopied] = React.useState(false);
+  const { status, copy } = useCopyFeedback();
 
-  const handleClick = () => {
-    navigator.clipboard
-      .writeText(ocid)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), COPIED_RESET_MS);
-      })
-      .catch((error: unknown) => console.error("[freelens-oci-cluster] clipboard write failed", error));
-  };
-
-  return (
-    <Icon
-      material={copied ? "done" : "content_copy"}
-      tooltip={copied ? "Copied" : "Copy OCID"}
-      interactive
-      small
-      onClick={handleClick}
-    />
-  );
+  return <Icon material={ICON[status]} tooltip={TOOLTIP[status]} interactive small onClick={() => copy(ocid)} />;
 }

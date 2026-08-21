@@ -1,12 +1,15 @@
 export type OciPage = "nodes" | "service-lb" | "pv-storage" | "network" | "topology";
 
 // "network"はsubnet/SL/RT/NSGのper-OCID Map群を束ねる複合セクション(store側で特別扱い)。
+// "vnics"も同様に、attachment一覧とVNIC本体のper-OCID Mapを束ねる。
 export type OciSectionKey =
   | "instances"
+  | "vnics"
   | "taggedResources"
   | "nlbs"
   | "lbs"
   | "volumes"
+  | "volumeAttachments"
   | "fileSystems"
   | "nodePools"
   | "wafs"
@@ -21,12 +24,14 @@ const PAGE_SECTIONS: Record<OciPage, readonly OciSectionKey[]> = {
   network: ["nodePools", "taggedResources", "nlbs", "lbs", "wafs", "network"],
   topology: [
     "instances",
+    "vnics",
     "nodePools",
     "taggedResources",
     "nlbs",
     "lbs",
     "wafs",
     "volumes",
+    "volumeAttachments",
     "fileSystems",
     "vcn",
     "network",
@@ -47,11 +52,13 @@ export const TOPOLOGY_SECTIONS = [
   "cluster",
   "taggedResources",
   "instances",
+  "vnics",
   "nodePools",
   "lbs",
   "nlbs",
   "wafs",
   "volumes",
+  "volumeAttachments",
   "volumeBackupPolicies",
   "fileSystems",
   "fssSnapshotPolicies",
@@ -72,11 +79,13 @@ export const TOPOLOGY_SECTION_LABEL: Record<TopologySection, string> = {
   cluster: "Cluster",
   taggedResources: "Tag Search",
   instances: "Instances",
+  vnics: "VNICs",
   nodePools: "Node Pools",
   lbs: "Load Balancers",
   nlbs: "Network Load Balancers",
   wafs: "WAFs",
   volumes: "Block Volumes",
+  volumeAttachments: "Volume Attachments",
   volumeBackupPolicies: "Backup Policies",
   fileSystems: "File Systems",
   fssSnapshotPolicies: "Snapshot Policies",

@@ -42,7 +42,7 @@ OKE クラスタでは次のページを利用できる。
 
 | ページ | 内容 |
 |---|---|
-| Nodes | K8s Node と OCI Instance の対応、ノードプールのサマリ |
+| Nodes | K8s Node と OCI Instance の対応（シェイプ・OCPU / メモリ）、ノードプールのサマリ |
 | Service↔LB | LoadBalancer Service と NLB / classic LB の対応 |
 | PV ↔ Storage | PersistentVolume と Block Volume / FSS の対応、バックアップポリシー |
 | Network | DNS（該当 OCI DNS ゾーンへのコンソール遷移つき）、WAF、LB/NLB、サブネット、ルート、backend health を外から内の経路順に確認 |
@@ -50,6 +50,7 @@ OKE クラスタでは次のページを利用できる。
 
 各ページの検索バーは、展開領域を含む表示内容を絞り込む。
 ヘッダのトグルで自動更新を有効にでき、更新間隔は Preferences で変更できる（既定60秒）。
+Topology ページのヘッダにあるコピーボタンは、表示中の図を Mermaid flowchart のテキストとしてクリップボードへ書き出す。
 
 ## 設定
 

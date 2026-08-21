@@ -23,7 +23,10 @@ import type {
   OciSecurityList,
   OciSubnet,
   OciVcn,
+  OciVnic,
+  OciVnicAttachment,
   OciVolume,
+  OciVolumeAttachment,
   OciVolumeBackupPolicy,
   OciVolumeBackupPolicyAssignment,
   OciWafPolicy,
@@ -103,6 +106,18 @@ export const ociCommands = {
 
   instanceList: listAll<{ compartmentId: string }, OciInstance>(
     ["compute", "instance", "list"],
+    ({ compartmentId }) => ["--compartment-id", compartmentId],
+  ),
+
+  vnicAttachmentList: listAll<{ compartmentId: string }, OciVnicAttachment>(
+    ["compute", "vnic-attachment", "list"],
+    ({ compartmentId }) => ["--compartment-id", compartmentId],
+  ),
+
+  vnicGet: getOne<{ vnicId: string }, OciVnic>(["network", "vnic", "get"], ({ vnicId }) => ["--vnic-id", vnicId]),
+
+  volumeAttachmentList: listAll<{ compartmentId: string }, OciVolumeAttachment>(
+    ["compute", "volume-attachment", "list"],
     ({ compartmentId }) => ["--compartment-id", compartmentId],
   ),
 
