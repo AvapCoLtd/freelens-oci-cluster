@@ -13,14 +13,6 @@ export interface IconProps {
 }
 export const Icon = Renderer.Component.Icon as unknown as React.ComponentType<IconProps>;
 
-export interface BadgeProps {
-  label?: React.ReactNode;
-  small?: boolean;
-  style?: React.CSSProperties;
-  className?: string;
-}
-export const Badge = Renderer.Component.Badge as unknown as React.ComponentType<BadgeProps>;
-
 export interface ButtonProps {
   label?: React.ReactNode;
   primary?: boolean;
@@ -32,6 +24,15 @@ export interface ButtonProps {
   onClick?: (event: React.MouseEvent) => void;
 }
 export const Button = Renderer.Component.Button as unknown as React.ComponentType<ButtonProps>;
+
+export interface CheckboxProps {
+  label?: React.ReactNode;
+  value?: boolean;
+  disabled?: boolean;
+  inline?: boolean;
+  onChange?: (value: boolean, event: React.ChangeEvent<HTMLInputElement>) => void;
+}
+export const Checkbox = Renderer.Component.Checkbox as unknown as React.ComponentType<CheckboxProps>;
 
 export interface SearchInputProps {
   value?: string;

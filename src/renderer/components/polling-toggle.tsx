@@ -3,16 +3,7 @@ import * as React from "react";
 import { normalizePollingInterval, ociPreferencesStore } from "../../common/store/oci-preferences-store";
 import type { OciPage } from "../match/page-sections";
 import { ociClusterStore } from "../store/oci-cluster-store";
-
-const LABEL_STYLE: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 4,
-  fontSize: 12,
-  color: "var(--textColorSecondary, #9aa0a6)",
-  cursor: "pointer",
-  userSelect: "none",
-};
+import { Checkbox } from "./freelens-ui";
 
 /**
  * 各ページ共通の自動更新ON/OFF。
@@ -42,13 +33,10 @@ export const PollingToggle = observer(function PollingToggle({
   }, [enabled, intervalSeconds, clusterKey, page]);
 
   return (
-    <label style={LABEL_STYLE}>
-      <input
-        type="checkbox"
-        checked={enabled}
-        onChange={(event) => ociPreferencesStore.setNodePollingEnabled(event.target.checked)}
-      />
-      Auto-refresh ({intervalSeconds}s)
-    </label>
+    <Checkbox
+      label={`Auto-refresh (${intervalSeconds}s)`}
+      value={enabled}
+      onChange={(value) => ociPreferencesStore.setNodePollingEnabled(value)}
+    />
   );
 });

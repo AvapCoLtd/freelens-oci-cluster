@@ -51,7 +51,7 @@ import { OcidCopyButton } from "./ocid-copy-button";
 import { RouteRuleTable, RuleTable } from "./rule-table";
 import { SearchBar } from "./search-bar";
 import { LoadingBlock, Spinner } from "./spinner";
-import { LifecycleBadge, StatusBadge, type StatusTone } from "./status-badge";
+import { type BadgeTone, LifecycleBadge, ToneBadge } from "./status-badge";
 import { TABLE_STYLE, TD_STYLE, TH_STYLE } from "./table-styles";
 import type { SearchState } from "./use-search-query";
 
@@ -165,11 +165,11 @@ function GatewayStatusCell({ ctx, entityId }: { ctx: SectionContext; entityId: s
   if (!isSupportedGatewayId(entityId)) return <span>-</span>;
   const result = ctx.data.gateways[entityId];
   if (!result) return <Spinner size={12} />;
-  if (!result.ok) return <StatusBadge label={FETCH_FAILED_LABEL} tone="neutral" />;
+  if (!result.ok) return <ToneBadge label={FETCH_FAILED_LABEL} tone="muted" />;
   const health = gatewayHealth(result.data);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-      <StatusBadge label={health.label} tone={health.healthy ? "success" : "error"} />
+      <ToneBadge label={health.label} tone={health.healthy ? "ok" : "fail"} />
       {result.data.displayName && <span style={{ fontSize: 11 }}>{result.data.displayName}</span>}
     </span>
   );
@@ -219,8 +219,8 @@ function NsgBlock({ ctx, nsgId }: { ctx: SectionContext; nsgId: string }) {
 }
 
 function BackendHealthBadge({ status }: { status: string | undefined }) {
-  if (!status) return <StatusBadge label="-" tone="neutral" />;
-  return <StatusBadge label={status} tone={status === "OK" ? "success" : "error"} />;
+  if (!status) return <ToneBadge label="-" tone="muted" />;
+  return <ToneBadge label={status} tone={status === "OK" ? "ok" : "fail"} />;
 }
 
 function BackendSetBlock({ ctx, lb, backendSetName }: { ctx: SectionContext; lb: LbRow; backendSetName: string }) {
@@ -262,12 +262,12 @@ function BackendSetBlock({ ctx, lb, backendSetName }: { ctx: SectionContext; lb:
 }
 
 function CertificateBadge({ validTo, parseError }: { validTo?: string; parseError?: boolean }) {
-  if (parseError || !validTo) return <StatusBadge label="Unparseable" tone="neutral" />;
+  if (parseError || !validTo) return <ToneBadge label="Unparseable" tone="muted" />;
   const days = daysUntil(validTo, Date.now());
-  if (days === undefined) return <StatusBadge label="-" tone="neutral" />;
-  if (days < 0) return <StatusBadge label={`Expired (${-days}d ago)`} tone="error" />;
-  if (days <= 30) return <StatusBadge label={`${days}d left`} tone="error" />;
-  return <StatusBadge label={`${days}d left`} tone="success" />;
+  if (days === undefined) return <ToneBadge label="-" tone="muted" />;
+  if (days < 0) return <ToneBadge label={`Expired (${-days}d ago)`} tone="fail" />;
+  if (days <= 30) return <ToneBadge label={`${days}d left`} tone="fail" />;
+  return <ToneBadge label={`${days}d left`} tone="ok" />;
 }
 
 function LbDetail({ ctx, lb }: { ctx: SectionContext; lb: LbRow }) {
@@ -562,16 +562,16 @@ function WafPolicyDetail({ ctx, policyId }: { ctx: SectionContext; policyId: str
   );
 }
 
-const DNS_MATCH_TONE: Record<DnsMatchKind, StatusTone> = {
-  matched: "success",
-  unmatched: "error",
-  unresolved: "error",
+const DNS_MATCH_TONE: Record<DnsMatchKind, BadgeTone> = {
+  matched: "ok",
+  unmatched: "fail",
+  unresolved: "fail",
 };
 
 /** 解決待ち(pending)を含むDNS行。検索対象はDnsRowの値のみ。 */
 interface DnsSectionRow extends DnsRow {
   pending: boolean;
-  tone?: StatusTone;
+  tone?: BadgeTone;
 }
 
 function dnsSectionRow(host: string, ctx: SectionContext, lbRows: LbRow[]): DnsSectionRow {
@@ -585,7 +585,7 @@ function dnsSectionRow(host: string, ctx: SectionContext, lbRows: LbRow[]): DnsS
       pending: false,
       statusLabel: RESOLUTION_FAILED_LABEL,
       errorMessage: `${RESOLUTION_FAILED_LABEL}: ${result.raw.message}`,
-      tone: "neutral",
+      tone: "muted",
     };
   }
   const match = matchDnsToLbs(result.data, lbRows);
@@ -643,7 +643,7 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
                       {row.errorMessage ?? <Spinner size={12} />}
                     </td>
                     <td style={TD_STYLE}>
-                      {row.statusLabel && row.tone ? <StatusBadge label={row.statusLabel} tone={row.tone} /> : "-"}
+                      {row.statusLabel && row.tone ? <ToneBadge label={row.statusLabel} tone={row.tone} /> : "-"}
                     </td>
                   </tr>
                 );
@@ -654,7 +654,7 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
                   <td style={TD_STYLE}>{row.resolvedIps.join(", ") || "-"}</td>
                   <td style={TD_STYLE}>{row.matchedLbNames.join(", ") || "-"}</td>
                   <td style={TD_STYLE}>
-                    {row.statusLabel && row.tone && <StatusBadge label={row.statusLabel} tone={row.tone} />}
+                    {row.statusLabel && row.tone && <ToneBadge label={row.statusLabel} tone={row.tone} />}
                   </td>
                 </tr>
               );

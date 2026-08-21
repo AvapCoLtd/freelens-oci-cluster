@@ -1,26 +1,35 @@
 import type * as React from "react";
 import { isAbnormalLifecycleState } from "../match/lifecycle-state";
-import { Badge } from "./freelens-ui";
 
-export type StatusTone = "success" | "error" | "neutral";
+export type BadgeTone = "ok" | "fail" | "warn" | "info" | "muted";
 
-const TONE_STYLE: Record<StatusTone, React.CSSProperties> = {
-  success: { background: "var(--colorSuccess, #4caf50)", color: "#fff" },
-  error: { background: "var(--colorError, #e05a5a)", color: "#fff" },
-  neutral: { background: "var(--halfGray, #6b6f76)", color: "#fff" },
+const TONE_COLOR: Record<BadgeTone, string> = {
+  ok: "var(--colorSuccess, #4caf50)",
+  fail: "var(--colorError, #e05a5a)",
+  warn: "var(--colorWarning, #c9a227)",
+  info: "var(--colorInfo, #3d90ce)",
+  muted: "var(--halfGray, #6b6f76)",
 };
 
-/** lifecycle-state・K8s Ready等の状態表示を、FreeLensのBadge(pill形状)で正常=success系/異常=error系に色分けする。 */
-export function StatusBadge({ label, tone }: { label: string; tone: StatusTone }) {
-  return <Badge label={label} small style={TONE_STYLE[tone]} />;
+const BASE_STYLE: React.CSSProperties = {
+  display: "inline-block",
+  borderRadius: 3,
+  padding: "1px 6px",
+  fontSize: 11,
+  whiteSpace: "nowrap",
+  color: "#fff",
+};
+
+export function ToneBadge({ label, tone }: { label: React.ReactNode; tone: BadgeTone }) {
+  return <span style={{ ...BASE_STYLE, background: TONE_COLOR[tone] }}>{label}</span>;
 }
 
-/** OCIリソースのlifecycle-state表示。未取得時は"-"をneutralで表示する。 */
+/** OCIリソースのlifecycle-state表示。未取得時は"-"をmutedで表示する。 */
 export function LifecycleBadge({ state }: { state: string | undefined }) {
-  if (!state) return <StatusBadge label="-" tone="neutral" />;
-  return <StatusBadge label={state} tone={isAbnormalLifecycleState(state) ? "error" : "success"} />;
+  if (!state) return <ToneBadge label="-" tone="muted" />;
+  return <ToneBadge label={state} tone={isAbnormalLifecycleState(state) ? "fail" : "ok"} />;
 }
 
 export function ReadyBadge({ ready }: { ready: boolean }) {
-  return <StatusBadge label={ready ? "Ready" : "NotReady"} tone={ready ? "success" : "error"} />;
+  return <ToneBadge label={ready ? "Ready" : "NotReady"} tone={ready ? "ok" : "fail"} />;
 }
