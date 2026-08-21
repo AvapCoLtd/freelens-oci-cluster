@@ -156,8 +156,10 @@ export interface DnsRow {
   matchedLbNames: readonly string[];
   statusLabel?: string;
   errorMessage?: string;
+  /** ホストを含むOCI DNSゾーン(GLOBAL)。未取得・不一致では付かない */
+  zone?: { id: string; name: string };
 }
 
 export function dnsSearchValues(row: DnsRow): SearchValue[] {
-  return [row.host, ...row.resolvedIps, ...row.matchedLbNames, row.statusLabel, row.errorMessage];
+  return [row.host, ...row.resolvedIps, ...row.matchedLbNames, row.statusLabel, row.errorMessage, row.zone?.name];
 }

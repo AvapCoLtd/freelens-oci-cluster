@@ -18,7 +18,8 @@ export type OciConsoleResourceType =
   | "waf"
   | "waf-policy"
   | "volume-backup-policy"
-  | "fss-snapshot-policy";
+  | "fss-snapshot-policy"
+  | "dns-zone";
 
 const CONSOLE_BASE_URL = "https://cloud.oracle.com";
 
@@ -33,10 +34,12 @@ const DIRECT_CONSOLE_PATH: Record<Exclude<OciConsoleResourceType, VcnScopedType 
   filesystem: "fss/file-systems",
   // WAF本体URL(waf/policies/<policy>/firewalls/<waf>、実機確認済み)の親ページ形。単体は未確認
   "waf-policy": "waf/policies",
-  // volume-backup-policyのみ未確認(実機遷移確認の対象)
+  // 未確認(実機遷移確認の対象)
   "volume-backup-policy": "block-storage/backup-policies",
   // 実機確認済み(2026-07-17)
   "fss-snapshot-policy": "fss/snapshot-policies",
+  // 実機確認済み(2026-08-21)
+  "dns-zone": "dns/zones",
   vcn: "networking/vcns",
   // DRGだけはVCN配下でなくcompartment直属のリソース
   drg: "networking/drgs",

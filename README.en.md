@@ -44,7 +44,7 @@ For non-OKE clusters, the extension displays an out-of-scope message.
 | Nodes | K8s Node to OCI Instance mappings and a node pool summary |
 | Service↔LB | LoadBalancer Service to NLB / classic LB mappings |
 | PV ↔ Storage | PersistentVolume to Block Volume / FSS mappings and backup policies |
-| Network | DNS, WAF, LB/NLB, subnet, route, and backend health checks in outside-in path order |
+| Network | DNS (with a console link to the matching OCI DNS zone), WAF, LB/NLB, subnet, route, and backend health checks in outside-in path order |
 | Topology | A diagram of cluster-related resources and their connections |
 
 The search bar on each page filters displayed content, including expandable details.

@@ -48,6 +48,7 @@ describe("TOPOLOGY_SECTIONS", () => {
       "gateways",
       "managedCerts",
       "dnsChecks",
+      "dnsZones",
     ]);
   });
 

@@ -45,6 +45,7 @@ function baseData(overrides: Partial<ClusterOciData>): ClusterOciData {
     wafPolicies: {},
     gateways: {},
     dnsChecks: {},
+    dnsZones: NOT_REQUESTED,
     managedCerts: {},
     volumeBackupPolicies: {},
     fssSnapshotPolicies: {},

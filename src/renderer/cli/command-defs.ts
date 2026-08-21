@@ -3,6 +3,7 @@ import type {
   OciBackendSetHealth,
   OciBlockingGateway,
   OciCluster,
+  OciDnsZone,
   OciDrg,
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
@@ -147,6 +148,14 @@ export const ociCommands = {
     ["ce", "node-pool", "list"],
     ({ compartmentId, clusterId }) => ["--compartment-id", compartmentId, "--cluster-id", clusterId],
   ),
+
+  // PRIVATEゾーンは対象外(公開ホスト名の突合が用途)。`--scope`省略は両スコープを混ぜて返す。
+  dnsZoneList: listAll<{ compartmentId: string }, OciDnsZone>(["dns", "zone", "list"], ({ compartmentId }) => [
+    "--compartment-id",
+    compartmentId,
+    "--scope",
+    "GLOBAL",
+  ]),
 
   wafList: listAll<{ compartmentId: string }, OciWafSummary>(
     ["waf", "web-app-firewall", "list"],

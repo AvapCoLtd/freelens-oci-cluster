@@ -48,6 +48,7 @@ K8s 起点を正とし、タグ起点は K8s に対応が残っていないリ�
 | pv-storage の取得順 | FSS スナップショットポリシーと Volume バックアップポリシーは compartment（× AD）単位の list を PV 読み込みと並走させ、名前解決は索引引きで済ませる。FileSystem 本体は per-OCID get のまま。volumeHandle が Export OCID の PV は先に per-OCID の `fs export get` を挟んで FileSystem OCID を得る（この解決の失敗はその PV の FileSystem 解決失敗として `fileSystems` セクションに乗る） | `fs file-system list` の FileSystemSummary は `filesystem-snapshot-policy-id` を持たず、バックアップ列の表示に足りない。バックアップポリシー割当（`--asset-id` 必須）にも一括ルートが無い |
 | 表示の露出単位 | UI 階層で2段階。①一覧（テーブル行・ステータス）はセクション単位で確定次第それぞれ出す。ただし1つのテーブルは行集合と各行のセル材料が揃うまで出さない（判定は [section-ready.ts](../src/renderer/match/section-ready.ts)）②アコーディオンの中身（SL/RT ルール・NSG ルール・WAF ポリシー・証明書・DNS 解決）は per-OCID の結果が来るまでその場にスピナーを出す。どちらも「成功または失敗」で確定とみなす | 取得段の単位でまとめて出すと、先に返ったテーブルまで待たされて体感が遅くなる。一方でテーブル内で行やセルが後から増えると画面がガタつくのでテーブル単位では原子的に出す。失敗を待ち条件から外すのは、1セクションの権限不足で他が永久に出ないのを防ぐため |
 | （例外）DNS セクション | `section-ready.ts` のゲートを通さず、行集合を K8s（Ingress / Service）から直接組む。各行の解決結果だけが per-OCID のスピナー扱い | 行の材料が OCI ではなく K8s 側にあり、`dnsChecks` の登録を待つと「該当ホスト名なし」を誤って先に出してしまう |
+| DNS ゾーン突合 | GLOBAL スコープのゾーンを compartment 集合の横断 list で取り、ホスト名の最長サフィックス一致（[dns-zone-match.ts](../src/renderer/match/dns-zone-match.ts)）でゾーンを決めてコンソール遷移を出す。PRIVATE ゾーンは対象外。ゾーン取得の失敗はこのセクション単独の失敗として扱い、DNS 行自体は従来どおり出す | 委譲された子ゾーンがある構成では親ゾーンを開いてもレコードが無い。突合先が無い環境で行ごと消えると解決結果の確認までできなくなる |
 | 取得中の表示 | スピナー（[spinner.tsx](../src/renderer/components/spinner.tsx)）に統一しテキストラベルは使わない。`Renderer.Component` は Spinner を export しない（FreeLens 1.10.3 の renderer-api/components で確認）ため、本体の `spinner.scss` と同じ幾何の CSS を注入する（注入機構は [injected-style.ts](../src/renderer/components/injected-style.ts) 共通）。唯一の例外が Topology の初回ローディングで、確定セクション数 n/m と待機中セクション名をテキストで出す | 本体 UI（cluster overview 等）と見た目を揃える。「Loading...」の文字は幅を持つため、実データに置き換わるときに列幅と行の高さが動く。Topology は表セルではなく図全体の代替表示であり、列幅が動く問題が起きない。図は全セクション確定まで何も出せない分、無言のスピナーでは待ち時間の見当がつかない |
 | backend health | 行の展開時オンデマンド取得のみ。Topology 図のノード・エッジにも反映しない。ただし検索語が入力されている間は、表示中の全 LB 行分を先行取得する | 揮発データ。取得を見た分だけに抑制する。図に載せると描画のたびに全 LB 分を取ることになり、この抑制が崩れる。検索中だけ抑制を緩めるのは、検索結果がそれまでの展開履歴に依存しないようにするため（未展開行の backend health もヒットさせる） |
 | 自動更新 | 全ページ共通トグル（永続化）+ 間隔設定（既定60秒・下限30秒）。再取得は旧データ表示のまま裏で差し替える（force 方式）。周期リトライで自然回復しないエラー（認証系・コマンド起動失敗・互換コマンド非互換・内部エラー）の検出で自動停止しトグルを OFF へ倒す | セクションを idle 化すると更新間隔ごとにページ全体がスピナーへ戻る。自動停止は30〜60秒ごとの oci 実行とエラー連打を防ぐ |
@@ -100,9 +101,10 @@ Topology ページはクラスタ関連リソースの位置と繋がりを一�
 - `Oracle-Tags.CreatedBy` は Oracle 側の自動タグ機構であり、仕様変更で経路4が空振りする可能性がある。K8s 起点の3経路が正であるため一覧自体は欠落しない。
 - OCI に汎用の依存関係 API は存在しない。ネットワークトポロジ API（`oci network vcn-topology get` 等）は現行 IAM ポリシーでは 404 を確認済みで使用しない。
 - WAF がクラスタ LB と別 compartment にある構成では compartment 集合の探索から漏れる可能性がある。
+- DNS ゾーンの探索はクラスタの compartment 集合（アンカー + タグ検索ヒット compartment）に限るため、ゾーンがその外（テナンシ root 等）にある構成では突合できない。
 - DNS 突合はこの端末のリゾルバによる観測のため、スプリット DNS 環境では外部からの解決結果と異なることがある。
 - OCI は権限不足と不在に同じ応答（`NotAuthorizedOrNotFound`）を返す。Volume / FSS への読み取り権限が皆無な環境では孤立 PV と権限不足を区別できず、孤立 PV 側に倒れる（表示はどちらとも読める文言に留める）。
-- コンソールのディープリンク（実装は [console-url.ts](../src/renderer/match/console-url.ts)）は cluster / instance / NLB / classic LB / volume / FSS / subnet / SL / RT / WAF / FSS スナップショットポリシーを実機で遷移確認済み。NSG・WAF ポリシー単体・Volume バックアップポリシー・VCN 本体・ゲートウェイ5種（IGW / NAT / SGW / LPG / DRG）は同構造からの類推で未確認。
+- コンソールのディープリンク（実装は [console-url.ts](../src/renderer/match/console-url.ts)）は cluster / instance / NLB / classic LB / volume / FSS / subnet / SL / RT / WAF / FSS スナップショットポリシー / DNS ゾーンを実機で遷移確認済み。NSG・WAF ポリシー単体・Volume バックアップポリシー・VCN 本体・ゲートウェイ5種（IGW / NAT / SGW / LPG / DRG）は同構造からの類推で未確認。
 
 ## 将来的実装（スコープ外として合意済み）
 

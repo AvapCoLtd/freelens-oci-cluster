@@ -119,6 +119,12 @@ describe("buildConsoleUrl", () => {
     );
   });
 
+  it("builds a DNS zone URL (実機確認済み 2026-08-21)", () => {
+    expect(buildConsoleUrl("dns-zone", "ocid1.dns-zone.oc1..zzzz", "ap-tokyo-1")).toBe(
+      "https://cloud.oracle.com/dns/zones/ocid1.dns-zone.oc1..zzzz?region=ap-tokyo-1",
+    );
+  });
+
   it("falls back to a flat path when vcnId is missing (呼び出し元契約違反時の防御)", () => {
     expect(buildConsoleUrl("subnet", "ocid1.subnet.oc1.ap-tokyo-1.aaaa", "ap-tokyo-1")).toBe(
       "https://cloud.oracle.com/networking/subnets/ocid1.subnet.oc1.ap-tokyo-1.aaaa?region=ap-tokyo-1",
@@ -144,6 +150,7 @@ describe("buildConsoleUrl", () => {
       "local-peering-gateway",
       "drg",
       "waf",
+      "dns-zone",
     ];
     for (const type of types) {
       const url = buildConsoleUrl(type, "ocid1.x.oc1.ap-tokyo-1.aaaa", "ap-tokyo-1", VCN);

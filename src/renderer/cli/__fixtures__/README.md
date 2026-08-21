@@ -99,7 +99,7 @@
 - 対話プロンプト(`Do you want to create a new config file? [Y/n]:`)が出る経路があるため、
   子プロセスの stdin は必ず閉じる(`/dev/null`)。閉じていれば EOF で `Abort:` して即終了する
 
-## コマンド → ファイル対応(全 43 コマンド)
+## コマンド → ファイル対応(全 44 コマンド)
 
 `#` は [fetch.ts](../../fetch/fetch.ts) / [anchor.ts](../../fetch/anchor.ts) のコメント番号。
 OCID は下記サニタイズ済みのダミー値で表記している。
@@ -154,6 +154,7 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 | 29 | `network vcn get --vcn-id …` | `stdout/29-network-vcn-get.json` | 0 |
 | 30 | `fs export get --export-id …` | `stdout/30-fs-export-get.json` | 0 |
 | 31 | `bv volume get --volume-id …` | `stdout/31-bv-volume-get.json` | 0 |
+| 32 | `dns zone list --compartment-id … --scope GLOBAL --all` | (未採取) | - |
 
 ## エラー・警告フィクスチャ
 
@@ -181,6 +182,7 @@ OCID は下記サニタイズ済みのダミー値で表記している。
 | 権限不足(403 `NotAuthorized`) | OCI は権限不足も 404 `NotAuthorizedOrNotFound` で返すため、403 を意図的に発生させられなかった。実装上は 404 側で扱う |
 | `oci` コマンド自体の起動失敗(ENOENT 等) | CLI の出力ではなく `execFile` の失敗であり、フィクスチャの対象外 |
 | タイムアウト / stdout サイズ超過 | 実行機側の挙動であり、フィクスチャの対象外 |
+| #32 `dns zone list --scope GLOBAL --all` の応答 | 実機未採取。OciDnsZone の id / name / lifecycle-state は API 仕様からの推測 |
 
 ## サニタイズ
 

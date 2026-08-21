@@ -447,6 +447,7 @@ describe("topologyのセクション進行状態", () => {
         "gateways",
         "managedCerts",
         "dnsChecks",
+        "dnsZones",
       ].map((section) => ({ section, status: "loading" })),
     );
   });

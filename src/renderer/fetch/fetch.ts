@@ -11,6 +11,7 @@ import type {
   OciBackupPolicyView,
   OciBlockingGateway,
   OciCluster,
+  OciDnsZone,
   OciDrg,
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
@@ -57,6 +58,8 @@ export interface ClusterOciData {
   gateways: Record<string, OciResult<OciGatewayStatusView>>;
   /** ホスト名→解決Aレコード(この端末のリゾルバによる観測) */
   dnsChecks: Record<string, OciResult<string[]>>;
+  /** DNSセクションのホスト名からコンソールへ飛ぶためのGLOBALゾーン一覧 */
+  dnsZones: OciResult<OciDnsZone[]>;
   /** Certificatesサービスの証明書OCID→期限(listener certificate-ids方式) */
   managedCerts: Record<string, OciResult<OciManagedCertView>>;
   /** Block Volume OCID→バックアップポリシー名(未割当はpolicyName=undefined) */
@@ -212,6 +215,16 @@ export function fetchWafs(compartmentIds: string[], ociCliCommand: string): Prom
   return toSectionResult(
     listAcrossCompartments(
       (compartmentId) => run(ociCommands.wafList, { compartmentId }, ociCliCommand),
+      compartmentIds,
+    ),
+  );
+}
+
+// #32 DNSゾーン一覧(networkページ、ホスト名→ゾーンのコンソール遷移)。PRIVATEゾーンは対象外。
+export function fetchDnsZones(compartmentIds: string[], ociCliCommand: string): Promise<OciResult<OciDnsZone[]>> {
+  return toSectionResult(
+    listAcrossCompartments(
+      (compartmentId) => run(ociCommands.dnsZoneList, { compartmentId }, ociCliCommand),
       compartmentIds,
     ),
   );

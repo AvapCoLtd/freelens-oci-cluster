@@ -75,6 +75,8 @@ function failureOfSection(data: ClusterOciData, section: TopologySection): Secti
       return firstFailure(data.managedCerts);
     case "dnsChecks":
       return firstFailure(data.dnsChecks);
+    case "dnsZones":
+      return failureOf(data.dnsZones);
   }
 }
 

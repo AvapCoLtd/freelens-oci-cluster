@@ -242,6 +242,18 @@ describe("dnsSearchValues", () => {
     );
     expect(values).toContain("Resolution failed: getaddrinfo ENOTFOUND");
   });
+
+  it("DNSゾーン名でも引ける", () => {
+    const values = texts(
+      dnsSearchValues({
+        host: "app.example.org",
+        resolvedIps: ["203.0.113.6"],
+        matchedLbNames: [],
+        zone: { id: "ocid1.dns-zone.oc1..zzzz", name: "example.org" },
+      }),
+    );
+    expect(values).toContain("example.org");
+  });
 });
 
 describe("matchedOnlyInDetail", () => {

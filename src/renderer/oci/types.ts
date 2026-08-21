@@ -257,6 +257,14 @@ export interface OciWafPolicy {
   "response-protection"?: { rules?: OciWafProtectionRule[] } | null;
 }
 
+/** `dns zone list --scope GLOBAL`(フィクスチャ未採取) */
+export interface OciDnsZone {
+  id: string;
+  name: string;
+  "compartment-id"?: string;
+  "lifecycle-state"?: string;
+}
+
 /** `bv volume-backup-policy-assignment get-…-asset-assignment`(割当なしはstdout空) → 16a */
 export interface OciVolumeBackupPolicyAssignment {
   "policy-id"?: string;

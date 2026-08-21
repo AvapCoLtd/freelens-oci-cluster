@@ -8,6 +8,7 @@ import {
   fetchAvailabilityDomains,
   fetchBackendSetHealth,
   fetchCluster,
+  fetchDnsZones,
   fetchFileSystem,
   fetchFssExport,
   fetchFssSnapshotPolicies,
@@ -59,6 +60,7 @@ import type {
   OciBackendSetHealthView,
   OciBackupPolicyView,
   OciCluster,
+  OciDnsZone,
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
   OciFssExport,
@@ -160,6 +162,7 @@ interface ClusterCache {
   volumes: SectionState<OciVolume[]>;
   nodePools: SectionState<OciNodePoolSummary[]>;
   wafs: SectionState<OciWafSummary[]>;
+  dnsZones: SectionState<OciDnsZone[]>;
   // 表示には出さない索引セクション(per-OCID getの置き換え元)。
   availabilityDomains: SectionState<OciAvailabilityDomain[]>;
   fssSnapshotPolicyList: SectionState<OciFilesystemSnapshotPolicy[]>;
@@ -199,6 +202,7 @@ function createIdleCache(): ClusterCache {
     volumes: { status: "idle" },
     nodePools: { status: "idle" },
     wafs: { status: "idle" },
+    dnsZones: { status: "idle" },
     availabilityDomains: { status: "idle" },
     fssSnapshotPolicyList: { status: "idle" },
     volumeBackupPolicyList: { status: "idle" },
@@ -410,6 +414,7 @@ export class OciClusterStore {
         patch.dnsChecks = new Map();
         patch.managedCerts = new Map();
         patch.backendHealths = new Map();
+        patch.dnsZones = { status: "idle" };
         patch.networkReconciled = false;
         for (const listSection of VCN_LIST_SECTIONS) outcomes.delete(listSection);
         continue;
@@ -564,6 +569,8 @@ export class OciClusterStore {
       // 行集合の出所はK8s(Ingress/Service)。ホスト名が1つも組めなければ待ち対象なし=okになる。
       case "dnsChecks":
         return this.entrySectionStatus(cache.networkReconciled, [cache.dnsChecks]);
+      case "dnsZones":
+        return sectionStatus(cache.dnsZones);
     }
   }
 
@@ -650,6 +657,7 @@ export class OciClusterStore {
   // backendHealthsは展開時オンデマンドのため条件に含めない。
   private networkSettled(cache: ClusterCache): boolean {
     if (!cache.networkReconciled) return false;
+    if (cache.dnsZones.status !== "ready") return false;
     return this.mapsSettled([
       cache.subnets,
       cache.securityLists,
@@ -691,6 +699,7 @@ export class OciClusterStore {
         pushMap(cache.gateways);
         pushMap(cache.dnsChecks);
         pushMap(cache.managedCerts);
+        if (cache.dnsZones.status === "ready") timestamps.push(cache.dnsZones.fetchedAt);
         continue;
       }
       const section = cache[key];
@@ -739,6 +748,7 @@ export class OciClusterStore {
       wafPolicies: this.toRecord(cache.wafPolicies),
       gateways: this.toRecord(cache.gateways),
       dnsChecks: this.toRecord(cache.dnsChecks),
+      dnsZones: sectionResultOrPlaceholder(cache.dnsZones),
       managedCerts: this.toRecord(cache.managedCerts),
       volumeBackupPolicies: this.toRecord(cache.volumeBackupPolicies),
       fssSnapshotPolicies: this.toRecord(cache.fssSnapshotPolicies),
@@ -1235,6 +1245,23 @@ export class OciClusterStore {
     );
   }
 
+  private ensureDnsZones(
+    clusterKey: string,
+    anchorCompartmentId: string,
+    clusterId: string,
+    force = false,
+  ): Promise<OciResult<OciDnsZone[]>> {
+    return this.ensureSectionValue(
+      clusterKey,
+      "dnsZones",
+      (cache) => cache.dnsZones,
+      (state) => this.updateCache(clusterKey, { dnsZones: state }),
+      async () =>
+        fetchDnsZones(await this.compartmentIdsFor(clusterKey, anchorCompartmentId, clusterId), this.ociCliCommand),
+      force,
+    );
+  }
+
   private ensureSubnet(clusterKey: string, subnetId: string, force = false): Promise<OciResult<OciSubnet>> {
     return this.ensureMapValue(clusterKey, "subnets", subnetId, () => fetchSubnet(subnetId, this.ociCliCommand), force);
   }
@@ -1414,7 +1441,7 @@ export class OciClusterStore {
           return network;
         })();
 
-        const [cluster, taggedResources, nodePools, nlbs, lbs, wafs, vcn] = await Promise.all([
+        const [cluster, taggedResources, nodePools, nlbs, lbs, wafs, vcn, dnsZones] = await Promise.all([
           clusterJob,
           taggedJob,
           this.ensureNodePools(clusterKey, clusterId, compartmentId, force),
@@ -1422,9 +1449,15 @@ export class OciClusterStore {
           this.ensureLbs(clusterKey, compartmentId, clusterId, force),
           this.ensureWafs(clusterKey, compartmentId, clusterId, force),
           vcnJob,
+          this.ensureDnsZones(clusterKey, compartmentId, clusterId, force),
           this.ensureServiceNamespaces(clusterKey),
         ]);
-        jobs.push(clusterJob, taggedJob, ...[...vcn.results.values()].map((result) => Promise.resolve(result)));
+        jobs.push(
+          clusterJob,
+          taggedJob,
+          ...[...vcn.results.values()].map((result) => Promise.resolve(result)),
+          Promise.resolve(dnsZones),
+        );
 
         const deps = { cluster, nodePools, nlbs, lbs };
         // compartment内の無関係なLBのsubnet/NSGまで取得しない(クラスタ関連判定はUI表示と同じ基準)

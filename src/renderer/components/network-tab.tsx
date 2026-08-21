@@ -3,6 +3,7 @@ import { observer } from "mobx-react";
 import * as React from "react";
 import type { ClusterOciData } from "../fetch/fetch";
 import { collectHostnames, type DnsMatchKind, matchDnsToLbs } from "../match/dns-check";
+import { findZoneForHost } from "../match/dns-zone-match";
 import { filterRows } from "../match/filter-rows";
 import { gatewayHealth, isSupportedGatewayId } from "../match/gateway-status";
 import { daysUntil } from "../match/lb-certificates";
@@ -40,7 +41,7 @@ import { nsgRuleRows, routeRows, securityListRuleRows } from "../match/rule-rows
 import { entriesReady, sectionsReady } from "../match/section-ready";
 import { ingressIpsOfServices } from "../match/service-lb";
 import { wafDefaultAction, wafPolicyRuleRows } from "../match/waf-policy";
-import type { OciResult } from "../oci/result";
+import { isPending, type OciResult } from "../oci/result";
 import { backendHealthKey, ociClusterStore } from "../store/oci-cluster-store";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
@@ -571,18 +572,31 @@ const DNS_MATCH_TONE: Record<DnsMatchKind, BadgeTone> = {
 /** 解決待ち(pending)を含むDNS行。検索対象はDnsRowの値のみ。 */
 interface DnsSectionRow extends DnsRow {
   pending: boolean;
+  zonePending: boolean;
   tone?: BadgeTone;
 }
 
+function dnsZoneOf(host: string, ctx: SectionContext): DnsRow["zone"] {
+  const zones = ctx.data.dnsZones;
+  if (!zones.ok) return undefined;
+  const zone = findZoneForHost(host, zones.data);
+  return zone && { id: zone.id, name: zone.name };
+}
+
 function dnsSectionRow(host: string, ctx: SectionContext, lbRows: LbRow[]): DnsSectionRow {
+  const zone = dnsZoneOf(host, ctx);
+  const zones = ctx.data.dnsZones;
+  const zonePending = !zones.ok && (zones.kind === "loading" || zones.kind === "not_requested");
   const result = ctx.data.dnsChecks[host];
-  if (!result) return { host, resolvedIps: [], matchedLbNames: [], pending: true };
+  if (!result) return { host, resolvedIps: [], matchedLbNames: [], zone, pending: true, zonePending };
   if (!result.ok) {
     return {
       host,
       resolvedIps: [],
       matchedLbNames: [],
+      zone,
       pending: false,
+      zonePending,
       statusLabel: RESOLUTION_FAILED_LABEL,
       errorMessage: `${RESOLUTION_FAILED_LABEL}: ${result.raw.message}`,
       tone: "muted",
@@ -593,7 +607,9 @@ function dnsSectionRow(host: string, ctx: SectionContext, lbRows: LbRow[]): DnsS
     host,
     resolvedIps: result.data,
     matchedLbNames: match.matchedLbNames,
+    zone,
     pending: false,
+    zonePending,
     statusLabel: DNS_MATCH_LABEL[match.kind],
     tone: DNS_MATCH_TONE[match.kind],
   };
@@ -619,6 +635,9 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
         Resolves Ingress / Service (external-dns) hostnames using this machine's resolver and cross-checks them against
         cluster-related LB IPs. In split-DNS environments, results may differ from external resolution.
       </div>
+      {!ctx.data.dnsZones.ok && !isPending(ctx.data.dnsZones) && ctx.data.dnsZones.kind !== "not_requested" && (
+        <SectionError kind={ctx.data.dnsZones.kind} raw={ctx.data.dnsZones.raw} />
+      )}
       {hosts.length === 0 ? (
         <EmptyState message="No hostnames to check (no Ingress / external-dns annotations)" />
       ) : rows.length === 0 ? (
@@ -631,6 +650,8 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
               <th style={TH_STYLE}>Resolved IP</th>
               <th style={TH_STYLE}>Matched LB</th>
               <th style={TH_STYLE}>Result</th>
+              <th style={TH_STYLE}>DNS Zone</th>
+              <th style={TH_STYLE} />
             </tr>
           </thead>
           <tbody>
@@ -645,6 +666,12 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
                     <td style={TD_STYLE}>
                       {row.statusLabel && row.tone ? <ToneBadge label={row.statusLabel} tone={row.tone} /> : "-"}
                     </td>
+                    <td style={TD_STYLE}>{row.zonePending ? <Spinner size={12} /> : (row.zone?.name ?? "-")}</td>
+                    <td style={TD_STYLE}>
+                      {ctx.region && row.zone && (
+                        <ConsoleButton type="dns-zone" ocid={row.zone.id} region={ctx.region} />
+                      )}
+                    </td>
                   </tr>
                 );
               }
@@ -655,6 +682,10 @@ function DnsSection({ ctx, view }: { ctx: SectionContext; view: NetworkView }) {
                   <td style={TD_STYLE}>{row.matchedLbNames.join(", ") || "-"}</td>
                   <td style={TD_STYLE}>
                     {row.statusLabel && row.tone && <ToneBadge label={row.statusLabel} tone={row.tone} />}
+                  </td>
+                  <td style={TD_STYLE}>{row.zonePending ? <Spinner size={12} /> : (row.zone?.name ?? "-")}</td>
+                  <td style={TD_STYLE}>
+                    {ctx.region && row.zone && <ConsoleButton type="dns-zone" ocid={row.zone.id} region={ctx.region} />}
                   </td>
                 </tr>
               );

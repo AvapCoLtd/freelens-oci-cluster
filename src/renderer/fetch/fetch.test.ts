@@ -7,6 +7,7 @@ import {
   fetchAvailabilityDomains,
   fetchBackendSetHealth,
   fetchCluster,
+  fetchDnsZones,
   fetchFileSystem,
   fetchFssExport,
   fetchFssSnapshotPolicies,
@@ -172,6 +173,11 @@ const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }
     name: "fetchWafs",
     call: () => fetchWafs([COMPARTMENT_ID], OCI_COMMAND),
     expected: [{ command: "wafList", params: { compartmentId: COMPARTMENT_ID } }],
+  },
+  {
+    name: "fetchDnsZones",
+    call: () => fetchDnsZones([COMPARTMENT_ID], OCI_COMMAND),
+    expected: [{ command: "dnsZoneList", params: { compartmentId: COMPARTMENT_ID } }],
   },
   {
     name: "fetchVcn",
@@ -346,7 +352,7 @@ describe("取得経路のコマンド割り当て", () => {
     expect(settingsSeen).toEqual([OCI_COMMAND]);
   });
 
-  it("定義表の全43コマンドが取得経路から呼ばれる", async () => {
+  it("定義表の全44コマンドが取得経路から呼ばれる", async () => {
     const used = new Set<string>();
     for (const mapping of MAPPINGS) {
       calls = [];
@@ -355,7 +361,7 @@ describe("取得経路のコマンド割り当て", () => {
       for (const call of calls) used.add(call.command);
     }
     expect(used).toEqual(new Set(Object.keys(ociCommands)));
-    expect(used.size).toBe(43);
+    expect(used.size).toBe(44);
   });
 });
 

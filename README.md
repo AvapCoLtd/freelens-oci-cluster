@@ -45,7 +45,7 @@ OKE クラスタでは次のページを利用できる。
 | Nodes | K8s Node と OCI Instance の対応、ノードプールのサマリ |
 | Service↔LB | LoadBalancer Service と NLB / classic LB の対応 |
 | PV ↔ Storage | PersistentVolume と Block Volume / FSS の対応、バックアップポリシー |
-| Network | DNS、WAF、LB/NLB、サブネット、ルート、backend health を外から内の経路順に確認 |
+| Network | DNS（該当 OCI DNS ゾーンへのコンソール遷移つき）、WAF、LB/NLB、サブネット、ルート、backend health を外から内の経路順に確認 |
 | Topology | クラスタ関連リソースの位置と接続を一枚の図で表示 |
 
 各ページの検索バーは、展開領域を含む表示内容を絞り込む。

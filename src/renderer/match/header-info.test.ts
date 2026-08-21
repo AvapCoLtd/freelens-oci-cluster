@@ -40,6 +40,7 @@ function loadedState(data: Partial<ClusterOciData>): OciClusterViewState {
       wafPolicies: {},
       gateways: {},
       dnsChecks: {},
+      dnsZones: NOT_REQUESTED,
       managedCerts: {},
       volumeBackupPolicies: {},
       fssSnapshotPolicies: {},

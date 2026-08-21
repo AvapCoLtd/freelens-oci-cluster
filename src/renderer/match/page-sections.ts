@@ -63,6 +63,7 @@ export const TOPOLOGY_SECTIONS = [
   "gateways",
   "managedCerts",
   "dnsChecks",
+  "dnsZones",
 ] as const;
 
 export type TopologySection = (typeof TOPOLOGY_SECTIONS)[number];
@@ -87,4 +88,5 @@ export const TOPOLOGY_SECTION_LABEL: Record<TopologySection, string> = {
   gateways: "Gateways",
   managedCerts: "Certificates",
   dnsChecks: "DNS Checks",
+  dnsZones: "DNS Zones",
 };
