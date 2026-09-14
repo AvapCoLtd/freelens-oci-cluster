@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectHostnames, matchDnsToLbs } from "./dns-check";
+import { collectHostnames, matchDnsToLbs, type ServiceLike } from "./dns-check";
 
 describe("collectHostnames", () => {
   it("Ingressのrules/tlsとServiceのexternal-dnsアノテーションから重複なしで集める", () => {
@@ -12,18 +12,48 @@ describe("collectHostnames", () => {
       },
       { spec: {} },
     ];
-    const services = [
+    const services: ServiceLike[] = [
       {
-        metadata: { annotations: { "external-dns.alpha.kubernetes.io/hostname": "svc.example.com, api.example.com" } },
+        metadata: { annotations: { "external-dns.kubernetes.io/hostname": "svc.example.com, api.example.com" } },
+      },
+      {
+        metadata: { annotations: { "external-dns.alpha.kubernetes.io/hostname": "legacy-svc.example.com" } },
       },
       { metadata: {} },
     ];
     expect(collectHostnames(ingresses, services).sort()).toEqual([
       "api.example.com",
       "app.example.com",
+      "legacy-svc.example.com",
       "svc.example.com",
       "tls-only.example.com",
     ]);
+  });
+
+  it("新prefixのhostnameアノテーションのみでも集める", () => {
+    const services = [{ metadata: { annotations: { "external-dns.kubernetes.io/hostname": "new.example.com" } } }];
+    expect(collectHostnames([], services)).toEqual(["new.example.com"]);
+  });
+
+  it("旧prefixのhostnameアノテーションのみならフォールバックして集める", () => {
+    const services = [
+      { metadata: { annotations: { "external-dns.alpha.kubernetes.io/hostname": "legacy.example.com" } } },
+    ];
+    expect(collectHostnames([], services)).toEqual(["legacy.example.com"]);
+  });
+
+  it("新旧prefixが併記なら新prefixを優先する", () => {
+    const services = [
+      {
+        metadata: {
+          annotations: {
+            "external-dns.kubernetes.io/hostname": "new.example.com",
+            "external-dns.alpha.kubernetes.io/hostname": "legacy.example.com",
+          },
+        },
+      },
+    ];
+    expect(collectHostnames([], services)).toEqual(["new.example.com"]);
   });
 
   it("ワイルドカードホストは除外する(resolve不能)", () => {

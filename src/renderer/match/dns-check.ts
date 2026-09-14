@@ -9,7 +9,8 @@ export interface ServiceLike {
   metadata?: { annotations?: Record<string, string> };
 }
 
-const EXTERNAL_DNS_HOSTNAME_ANNOTATION = "external-dns.alpha.kubernetes.io/hostname";
+const EXTERNAL_DNS_HOSTNAME_ANNOTATION = "external-dns.kubernetes.io/hostname";
+const EXTERNAL_DNS_HOSTNAME_ANNOTATION_LEGACY = "external-dns.alpha.kubernetes.io/hostname";
 
 /** DNS突合対象のホスト名集合(Ingressのrules/tls + Serviceのexternal-dnsアノテーション)。 */
 export function collectHostnames(ingresses: IngressLike[], services: ServiceLike[]): string[] {
@@ -23,7 +24,10 @@ export function collectHostnames(ingresses: IngressLike[], services: ServiceLike
     }
   }
   for (const service of services) {
-    const annotation = service.metadata?.annotations?.[EXTERNAL_DNS_HOSTNAME_ANNOTATION];
+    const annotations = service.metadata?.annotations;
+    // 移行していないクラスタ向けに旧prefixも読む
+    const annotation =
+      annotations?.[EXTERNAL_DNS_HOSTNAME_ANNOTATION] ?? annotations?.[EXTERNAL_DNS_HOSTNAME_ANNOTATION_LEGACY];
     if (!annotation) continue;
     for (const host of annotation.split(",")) {
       const trimmed = host.trim();
