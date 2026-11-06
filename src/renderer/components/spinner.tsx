@@ -1,23 +1,8 @@
 import type * as React from "react";
-import type { InjectedStyle } from "./injected-style";
+import "./spinner.css";
 
-// Renderer.Component はSpinnerをexportしない(FreeLens 1.10.3のrenderer-api/componentsで確認)。
 // 見た目はFreeLens本体のspinner.scssに合わせる(枠線幅=直径/6、1秒/回転)。
 const SPINNER_CLASS = "oci-spinner";
-
-export const SPINNER_STYLE: InjectedStyle = {
-  id: SPINNER_CLASS,
-  css: [
-    `.${SPINNER_CLASS} {`,
-    "  display: inline-block;",
-    "  border-style: solid;",
-    "  border-color: transparent var(--textColorSecondary, #9aa0a6) transparent transparent;",
-    "  border-radius: 50%;",
-    `  animation: ${SPINNER_CLASS}-rotate 1s linear infinite;`,
-    "}",
-    `@keyframes ${SPINNER_CLASS}-rotate { to { transform: rotate(360deg); } }`,
-  ].join("\n"),
-};
 
 export interface SpinnerProps {
   /** 直径(px)。表の行内は12、セクション本体は24を使う。 */

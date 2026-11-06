@@ -1,5 +1,5 @@
-import { X509Certificate } from "node:crypto";
 import type { OciLoadBalancer } from "../oci/types";
+import { parseX509Pem } from "./x509";
 
 export interface LbCertInfo {
   name: string;
@@ -19,10 +19,10 @@ function parsePem(pem: string | null | undefined): Pick<LbCertInfo, "validTo" | 
   const block = pem?.match(FIRST_CERT_BLOCK)?.[0];
   if (!block) return { parseError: true };
   try {
-    const cert = new X509Certificate(block);
+    const cert = parseX509Pem(block);
     return {
-      validTo: new Date(cert.validTo).toISOString(),
-      subject: cert.subject?.replace(/\n/g, ", "),
+      validTo: cert.validTo.toISOString(),
+      subject: cert.subject.replace(/\n/g, ", "),
       sans: cert.subjectAltName,
     };
   } catch {

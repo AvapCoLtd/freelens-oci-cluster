@@ -370,6 +370,8 @@ function sameClusterOciData(a: ClusterOciData, b: ClusterOciData): boolean {
   return (Object.keys(a) as (keyof ClusterOciData)[]).every((key) => a[key] === b[key]);
 }
 
+const NO_RESOURCE_SEARCHES: Readonly<Record<string, OciResult<OciResourceSummary | null>>> = {};
+
 // placeholderは共有の1件にする。呼ぶたびに作ると、未取得のままのセクションをsameClusterOciDataが変化と見て世代が進む。
 const LOADING_PLACEHOLDER: OciResult<never> = { ok: false, kind: "loading", raw: { message: LOADING_MESSAGE } };
 const NOT_REQUESTED_PLACEHOLDER: OciResult<never> = {
@@ -1653,7 +1655,7 @@ export class OciClusterStore {
     let release: (ids: readonly string[]) => void = () => undefined;
     const batch = new Promise<readonly string[]>((resolve) => {
       release = resolve;
-    }).then((ids) => (ids.length > 0 ? fetchResourceSearches(ids, this.ociCliCommand) : {}));
+    }).then((ids) => (ids.length > 0 ? fetchResourceSearches(ids, this.ociCliCommand) : NO_RESOURCE_SEARCHES));
     // fetcherはensureMapValueの中で同期的に呼ばれる。取得済み・取得中のOCIDはfetcherが呼ばれず束に入らない。
     const jobs = ocids.map((ocid) =>
       this.ensureMapValue(

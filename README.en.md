@@ -20,18 +20,22 @@ It never performs operations that mutate OCI resources.
 
 ## Prerequisites
 
-FreeLens 1.8.0 or later and an authenticated `oci` CLI are required.
-The extension is verified on FreeLens 1.10.3 (Extension API 1.10.3, Windows x64).
+FreeLens 2.0.0 or later (see `engines` in `package.json`) and an authenticated `oci` CLI are required.
+It does not load on FreeLens 1.x.
+On FreeLens 1.x, use v0.6.0, the last release for 1.x.
 
-The extension spawns `oci` for each data fetch and reads its JSON output.
+For each data fetch, the extension spawns `oci` from the FreeLens main process and reads its JSON output.
 It never receives keys or tokens; authentication remains entirely inside `oci`.
 You can also configure a wrapper command or an `oci` installation running under WSL.
 
 ## Install
 
 1. Download the latest `.tgz` from [GitHub Releases](https://github.com/AvapCoLtd/freelens-oci-cluster/releases).
-2. Drag and drop it onto the Extensions screen in FreeLens.
-3. Repeat the same operation with a new `.tgz` when updating.
+2. On the Extensions screen in FreeLens, specify the downloaded `.tgz` to install it.
+3. If `freelens-oci-cluster` is disabled on the Extensions screen, enable it.
+4. Repeat the same operation with a new `.tgz` when updating.
+
+On Windows, the installed extension is placed in `%APPDATA%\Freelens\extensions\freelens-oci-cluster`.
 
 ## Usage
 

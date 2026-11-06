@@ -59,7 +59,7 @@ function useStableK8sInput(input: TopologyK8sInput): TopologyK8sInput {
   return cache.current.input;
 }
 
-// @freelensapp/coreがclusterPagesのPage登録時にobserver()で包むため、ここでは包まない(既知の制約)。
+// observer()で包まない: FreeLensが登録時に包むため、二重になってthrowする。
 export function OciTopologyPage() {
   return <TopologyPage />;
 }

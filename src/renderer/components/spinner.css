@@ -1,0 +1,13 @@
+.oci-spinner {
+  display: inline-block;
+  border-style: solid;
+  border-color: transparent var(--textColorSecondary, #9aa0a6) transparent transparent;
+  border-radius: 50%;
+  animation: oci-spinner-rotate 1s linear infinite;
+}
+
+@keyframes oci-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}

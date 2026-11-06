@@ -1,0 +1,3 @@
+.oci-expandable-row:hover {
+  background: var(--tableSelectedRowBackground, rgba(255, 255, 255, 0.06));
+}

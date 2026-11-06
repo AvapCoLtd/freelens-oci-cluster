@@ -1,4 +1,3 @@
-import { Common } from "@freelensapp/extensions";
 import { buildConsoleUrl, type OciConsoleResourceType } from "../match/console-url";
 import { Button, Icon } from "./freelens-ui";
 
@@ -10,11 +9,9 @@ export interface ConsoleButtonProps {
   parentId?: string;
 }
 
-// window.openはElectronのBrowserWindow内遷移になり得るため、既定ブラウザで開くCommon.Util.openExternalを使う。
+// ホストのwindow-openハンドラが新規ウィンドウを拒否し、http/https URLを既定ブラウザへ渡す。
 function openConsole(url: string): void {
-  Common.Util.openExternal(url).catch((error: unknown) =>
-    console.error("[freelens-oci-cluster] openExternal failed", error),
-  );
+  window.open(url);
 }
 
 export function ConsoleButton({ type, ocid, region, parentId }: ConsoleButtonProps) {

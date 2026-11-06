@@ -39,7 +39,7 @@ deploy-mock: LABEL := (MOCK)
 deploy-mock: build-mock ## モックビルドを $(FREELENS_EXT_DIR) へ配置(スクリーンショット撮影用)
 
 deploy deploy-mock:
-	@test -n "$(FREELENS_EXT_DIR)" || { echo "FREELENS_EXT_DIR is not set (set it in .env, or: make $@ FREELENS_EXT_DIR=/path/to/.freelens/extensions)"; exit 1; }
+	@test -n "$(FREELENS_EXT_DIR)" || { echo "FREELENS_EXT_DIR is not set (set it in .env, or: make $@ FREELENS_EXT_DIR=<userData>/extensions, e.g. /mnt/c/Users/<user>/AppData/Roaming/Freelens/extensions)"; exit 1; }
 	mkdir -p "$(FREELENS_EXT_DIR)/freelens-oci-cluster"
 	@jq --indent 2 --arg dev "$(BUILD_TAG).$$(date +%s)" '.version |= . + "+" + $$dev' package.json > "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json"
 	@echo "== freelens-oci-cluster v$$(jq -r .version "$(FREELENS_EXT_DIR)/freelens-oci-cluster/package.json")$(if $(LABEL), $(LABEL)) =="

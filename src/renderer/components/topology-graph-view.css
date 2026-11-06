@@ -1,0 +1,27 @@
+/* ハンドルはエッジの接続点としてだけ要る。display:noneにすると座標が取れずエッジが原点に寄る。 */
+.oci-topology .react-flow__handle {
+  opacity: 0;
+}
+
+.oci-topology .react-flow__node {
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.oci-topology .react-flow__edge {
+  cursor: pointer;
+}
+
+.oci-topology .react-flow__edge path {
+  transition: opacity 120ms ease;
+}
+
+.oci-topology .react-flow__node.selected .oci-topology-box {
+  outline: 2px solid var(--primary, #3d90ce);
+}
+
+.oci-topology-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

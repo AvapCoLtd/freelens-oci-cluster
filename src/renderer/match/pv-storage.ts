@@ -14,10 +14,9 @@ export interface CsiSource {
   volumeHandle?: string;
 }
 
-// PersistentVolumeSpec型にcsiフィールドが定義されていない(@freelensapp/kube-object 1.10.3時点の型欠落)。
-// 実データには存在するため、csiを省略可能とする構造的な型で読む(パッケージへの直接依存を増やさないため)。
-export function getCsiSource(spec: { csi?: CsiSource }): CsiSource | undefined {
-  return spec.csi;
+// 拡張APIのPersistentVolumeSpec型にcsiが無いが、実データにはある。
+export function getCsiSource(spec: object): CsiSource | undefined {
+  return (spec as { csi?: CsiSource }).csi;
 }
 
 export type PvStorageKind = "block_volume" | "file_system" | "unsupported";

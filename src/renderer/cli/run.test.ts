@@ -2,10 +2,20 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { invokeExecOci } from "../oci-ipc";
 import { ociCommands } from "./command-defs";
 import { MAX_CONCURRENT_PROCESSES, runOciCommand, splitOciCommand } from "./run";
 
 vi.mock("node:child_process", () => ({ execFile: vi.fn() }));
+// IPCは値を構造化複製で渡すため、複製できない値が混ざればテストでも落とす。
+vi.mock("../oci-ipc", async () => {
+  const { execOciProcess } = await import("../../main/oci-exec");
+  return {
+    invokeExecOci: vi.fn(async (file: string, argv: readonly string[]) =>
+      structuredClone(await execOciProcess(file, argv)),
+    ),
+  };
+});
 
 const STDOUT_DIR = join(import.meta.dirname, "__fixtures__", "stdout");
 
@@ -225,6 +235,25 @@ describe("runOciCommand", () => {
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("mainへのIPCが失敗したらotherで返し、セマフォ枠を戻す", async () => {
+    vi.mocked(invokeExecOci).mockRejectedValueOnce(new Error("No handler registered for exec-oci"));
+    const result = await runOciCommand(ociCommands.subnetGet, { subnetId: "x" }, "");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe("other");
+    expect(result.raw.message).toContain("No handler registered");
+
+    const pending: Invocation[] = [];
+    handler = (invocation) => pending.push(invocation);
+    const results = Array.from({ length: MAX_CONCURRENT_PROCESSES }, (_, index) =>
+      runOciCommand(ociCommands.subnetGet, { subnetId: `ocid1.subnet.${index}` }, ""),
+    );
+    await flush();
+    expect(invocations).toHaveLength(MAX_CONCURRENT_PROCESSES);
+    for (const invocation of pending) invocation.done(null, '{"data": {}}', "");
+    expect((await Promise.all(results)).every((each) => each.ok)).toBe(true);
   });
 
   it("--all付きlistはopc-next-pageが出ても追わない", async () => {

@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { normalizePollingInterval, OciPreferencesStore } from "./oci-preferences-store";
 
-// @freelensapp/extensionsの実体はFreeLens本体のrendererバンドルで、node環境のimportで例外を出す
-// (Automatic publicPath is not supported in this browser)。基底クラスは差し替える。
+// @freelensapp/extensionsはホストが置くglobalThis.FreelensExtensionApiを読むだけで、テストでは中身が無い。
 vi.mock("@freelensapp/extensions", () => ({
   Common: { Store: { ExtensionStore: class {} } },
 }));

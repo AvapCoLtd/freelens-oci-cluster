@@ -13,7 +13,7 @@ export function useCopyFeedback(): {
   copyImage: (png: Promise<Blob>, label: string) => Promise<void>;
 } {
   const [status, setStatus] = React.useState<CopyStatus>("idle");
-  const resetTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  const resetTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
   const mountedRef = React.useRef(true);
   // アンマウント後・連打時の発火をここで止めないと、消えたコンポーネントへのsetStateが残る。
   React.useEffect(

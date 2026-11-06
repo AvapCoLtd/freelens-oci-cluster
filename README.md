@@ -21,18 +21,22 @@ OCIリソースを変更する操作は行わない。
 
 ## 前提条件
 
-FreeLens 1.8.0以上と、認証済みの `oci` CLIが必要。
-FreeLens 1.10.3（Extension API 1.10.3、Windows x64）で動作確認済み。
+FreeLens 2.0.0以上（`package.json` の `engines` を参照）と、認証済みの `oci` CLIが必要。
+FreeLens 1.xでは読み込まれない。
+FreeLens 1.xでは、1.x向けの最後のリリースであるv0.6.0を使う。
 
-プラグインはデータ取得のたびに `oci` を子プロセスとして実行し、JSON出力を読む。
+プラグインはデータ取得のたびに、FreeLensのメインプロセスから `oci` を子プロセスとして実行し、JSON出力を読む。
 鍵やトークンは受け取らず、認証は `oci` の内部で完結する。
 ラッパコマンドやWSL上の `oci` も設定できる。
 
 ## インストール
 
 1. [GitHub Releases](https://github.com/AvapCoLtd/freelens-oci-cluster/releases)から最新の `.tgz` をダウンロードする。
-2. FreeLensのExtensions画面へドラッグ&ドロップする。
-3. 更新時も新しい `.tgz` で同じ操作を行う。
+2. FreeLensのExtensions画面で、ダウンロードした `.tgz` を指定してインストールする。
+3. Extensions画面で `freelens-oci-cluster` が無効になっていれば、有効にする。
+4. 更新時も新しい `.tgz` で同じ操作を行う。
+
+Windowsでは、インストールした拡張は `%APPDATA%\Freelens\extensions\freelens-oci-cluster` に置かれる。
 
 ## 使い方
 
