@@ -1,12 +1,12 @@
 export interface IngressLike {
   spec?: {
     rules?: { host?: string }[];
-    tls?: { hosts?: string[] }[];
+    tls?: { hosts?: string[]; secretName?: string }[];
   };
 }
 
 export interface ServiceLike {
-  metadata?: { annotations?: Record<string, string> };
+  metadata?: { annotations?: Partial<Record<string, string>> };
 }
 
 const EXTERNAL_DNS_HOSTNAME_ANNOTATION = "external-dns.kubernetes.io/hostname";

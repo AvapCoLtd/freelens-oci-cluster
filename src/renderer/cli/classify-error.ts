@@ -1,3 +1,4 @@
+import type { OciCliFailure } from "../../common/oci-ipc";
 import type { OciErrorKind, OciRawErrorInfo } from "../oci/result";
 
 /** oci CLIがstderrに出す`ServiceError:`のJSON(キーはdata側と別系統のsnake_case)。 */
@@ -7,13 +8,6 @@ export interface OciCliServiceError {
   status?: number;
   opcRequestId?: string;
 }
-
-export type OciCliFailure =
-  /** 実行ファイルを起動できなかった(ENOENT等) */
-  | { reason: "launch"; message: string; code?: string }
-  | { reason: "timeout"; timeoutMs: number; stderr?: string }
-  | { reason: "output_limit"; maxBytes: number; stderr?: string }
-  | { reason: "exit"; exitCode: number; stdout: string; stderr: string };
 
 const SERVICE_ERROR_MARKER = "ServiceError:";
 

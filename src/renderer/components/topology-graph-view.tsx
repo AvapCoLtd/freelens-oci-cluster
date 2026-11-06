@@ -16,7 +16,7 @@ import {
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
-import xyflowCss from "@xyflow/react/dist/style.css?inline";
+import "@xyflow/react/dist/style.css";
 import * as React from "react";
 import type { TopologyLegendRow } from "../match/topology-edge-filter";
 import type { TopologyFlow, TopologyFlowNodeData, TopologySide } from "../match/topology-flow";
@@ -37,27 +37,11 @@ import {
 import type { TopologyEdgeHealth, TopologyEdgeKind } from "../match/topology-graph";
 import type { TopologyPoint } from "../match/topology-layout";
 import { matchTopologyNodes } from "../match/topology-search";
-import type { InjectedStyle } from "./injected-style";
-
-/** React Flow本体のスタイル。既存流儀に合わせてJS内文字列として注入する。 */
-export const XYFLOW_STYLE: InjectedStyle = { id: "oci-xyflow", css: xyflowCss };
+import "./topology-graph-view.css";
 
 const ROOT_CLASS = "oci-topology";
 const BOX_CLASS = "oci-topology-box";
 const LABEL_CLASS = "oci-topology-label";
-
-export const TOPOLOGY_FLOW_STYLE: InjectedStyle = {
-  id: ROOT_CLASS,
-  css: [
-    // ハンドルはエッジの接続点としてだけ要る。display:noneにすると座標が取れずエッジが原点に寄る。
-    `.${ROOT_CLASS} .react-flow__handle { opacity: 0; }`,
-    `.${ROOT_CLASS} .react-flow__node { cursor: pointer; transition: opacity 120ms ease; }`,
-    `.${ROOT_CLASS} .react-flow__edge { cursor: pointer; }`,
-    `.${ROOT_CLASS} .react-flow__edge path { transition: opacity 120ms ease; }`,
-    `.${ROOT_CLASS} .react-flow__node.selected .${BOX_CLASS} { outline: 2px solid var(--primary, #3d90ce); }`,
-    `.${LABEL_CLASS} { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }`,
-  ].join("\n"),
-};
 
 const WARNING_COLOR = "var(--colorWarning, #e0a45a)";
 const BORDER_COLOR = "var(--borderColor, #3f4041)";

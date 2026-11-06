@@ -13,7 +13,7 @@
 # `make deploy` のデプロイ先(FreeLens拡張機能ディレクトリ)。
 # 未設定だと `make deploy` はエラーで停止する。
 # 例(WSLからネイティブWindows版FreeLensを操作する場合):
-#   /mnt/c/Users/<user>/.freelens/extensions
+#   /mnt/c/Users/<user>/AppData/Roaming/Freelens/extensions
 FREELENS_EXT_DIR=
 ```
 
@@ -21,7 +21,7 @@ FREELENS_EXT_DIR=
 
 ## ビルド・テスト・デプロイ
 
-ビルドは完全にコンテナ化されており、pnpm・node・electronはビルドイメージ内に自己完結している。
+ビルドは完全にコンテナ化されており、pnpm・nodeはビルドイメージ内に自己完結している。
 
 ```sh
 make build    # 依存関係インストール + ビルド
@@ -35,11 +35,10 @@ make clean    # node_modules/out/*.tgz/.pnpm-store を削除
 
 ### 初回セットアップ
 
-新しい環境でこのリポジトリを開発する場合、`make deploy` の前に一度、[README](README.md#インストール)の手順(`.tgz` をFreeLensのExtensions画面へドラッグ&ドロップ)で拡張機能をインストールしておくこと。
-まだリリースされていない変更を試したいだけなら、`make pack` でローカルビルドした `.tgz` でも構わない。
-
-`make deploy` は既にインストール済みの拡張機能を更新する用途のみを想定している。
-一度もインストールしていない状態で実行すると、反映されないことがある。
+FreeLens 2.0は、拡張機能ディレクトリ直下の `freelens-oci-cluster/package.json` を起動時に見つけて登録する。
+ただし新しく見つけた拡張機能は無効の状態で登録される。
+初回の `make deploy` の後にFreeLensを再起動し、Extensions画面で `freelens-oci-cluster` を一度有効にすること。
+以後の `make deploy` は再起動だけで反映される。
 
 ## リリース手順
 

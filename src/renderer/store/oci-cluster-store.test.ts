@@ -47,6 +47,10 @@ const k8s = vi.hoisted(() => ({
 }));
 
 vi.mock("@freelensapp/extensions", () => ({ Renderer: { K8sApi: k8s } }));
+vi.mock("../oci-ipc", () => ({
+  invokeExecOci: vi.fn(),
+  invokeLookupHostIps: vi.fn(async () => ({ ok: true, addresses: [] })),
+}));
 vi.mock("../fetch/anchor", () => ({ resolveAnchor: vi.fn() }));
 // fetch*を1つでも実物のまま残すとociプロセスを起動しうるため、全件をモックに置き換える。
 vi.mock("../fetch/fetch", async (importOriginal) => {
