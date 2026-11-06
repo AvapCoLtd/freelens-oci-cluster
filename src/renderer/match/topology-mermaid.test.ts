@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { TopologyEdge, TopologyGraph, TopologyMissing, TopologyNode, TopologyNodeKind } from "./topology-graph";
+import type { TopologyEdge, TopologyGraph, TopologyMissing, TopologyNode } from "./topology-graph";
 import { toMermaid } from "./topology-mermaid";
+import type { TopologyNodeKind } from "./topology-order";
 
 const VCN = "ocid1.vcn.oc1.ap-tokyo-1.vcn1";
 const SUBNET = "ocid1.subnet.oc1.ap-tokyo-1.a";
@@ -13,13 +14,49 @@ function node(id: string, kind: TopologyNodeKind, parentId?: string, extra: Part
   return { id, kind, label: id, parentId, detail: [], ...extra };
 }
 
-function edge(kind: TopologyEdge["kind"], source: string, target: string): TopologyEdge {
-  return { id: `${kind}|${source}|${target}`, kind, source, target };
+function edge(
+  kind: TopologyEdge["kind"],
+  source: string,
+  target: string,
+  health?: TopologyEdge["health"],
+): TopologyEdge {
+  const built: TopologyEdge = { id: `${kind}|${source}|${target}`, kind, source, target };
+  if (health) built.health = health;
+  return built;
 }
 
 function graphOf(nodes: TopologyNode[], edges: TopologyEdge[] = [], missing: TopologyMissing[] = []): TopologyGraph {
   return { nodes, edges, missing };
 }
+
+describe("toMermaid: 通信許可エッジ", () => {
+  const SUBNET_B = "ocid1.subnet.oc1.ap-tokyo-1.b";
+
+  it("種別名でなくポート要約を線のラベルにし、破線のlinkStyleと凡例を出す", () => {
+    const allow: TopologyEdge = { ...edge("sl-allow", SUBNET_B, SUBNET), label: "tcp/443, tcp/6443" };
+    const text = toMermaid(graphOf([node(SUBNET, "subnet"), node(SUBNET_B, "subnet")], [allow]));
+    expect(text).toContain("  n2 -->|tcp/443, tcp/6443| n1");
+    expect(text).toContain("  linkStyle 0 stroke:#b8c26a,stroke-dasharray:6 3");
+    expect(text).toContain("  %%   Allowed by Security List : #b8c26a");
+  });
+
+  it("routeのlinkStyleは色だけのまま(通信許可エッジと線種で分ける)", () => {
+    const text = toMermaid(graphOf([node(SUBNET, "subnet"), node(NAT, "gateway")], [edge("route", SUBNET, NAT)]));
+    expect(text).toContain("  linkStyle 0 stroke:#8b9196");
+    expect(text).not.toContain("stroke-dasharray");
+  });
+
+  it("nsg-allowも破線にし、同じ図のrouteは実線のまま残す", () => {
+    const text = toMermaid(
+      graphOf(
+        [node(SUBNET, "subnet"), node(NAT, "gateway"), node(LB, "lb"), node(INSTANCE, "instance")],
+        [edge("route", SUBNET, NAT), edge("nsg-allow", LB, INSTANCE)],
+      ),
+    );
+    expect(text).toContain("  linkStyle 0 stroke:#8b9196");
+    expect(text).toContain("  linkStyle 1 stroke:#8f97e0,stroke-dasharray:6 3");
+  });
+});
 
 describe("toMermaid", () => {
   it("emits only the header for an empty graph", () => {
@@ -141,6 +178,48 @@ describe("toMermaid", () => {
     );
     expect(text).toContain("  n1 -->|Instance → Volume| n2");
     expect(text).toContain("  linkStyle 1 stroke:#d289cb");
+  });
+
+  it("colors the links carrying a backend health with the health color instead of the kind color", () => {
+    const text = toMermaid(
+      graphOf(
+        [
+          node(LB, "lb", undefined, { label: "lb" }),
+          node(INSTANCE, "instance", undefined, { label: "i" }),
+          node(VOLUME, "volume", undefined, { label: "v" }),
+        ],
+        [
+          edge("backend", LB, INSTANCE, "critical"),
+          edge("backend", LB, VOLUME, "ok"),
+          edge("attachment", INSTANCE, VOLUME),
+        ],
+      ),
+    );
+    const styles = text.split("\n").filter((line) => line.startsWith("  linkStyle"));
+    expect(styles).toEqual([
+      "  linkStyle 2 stroke:#d289cb",
+      "  linkStyle 1 stroke:#4fb477",
+      "  linkStyle 0 stroke:#d9534f",
+    ]);
+    expect(text).not.toContain("stroke:#7ea6d8");
+  });
+
+  it("lists the backend health colors in the legend alongside the kinds still using their own color", () => {
+    const text = toMermaid(
+      graphOf(
+        [
+          node(LB, "lb", undefined, { label: "lb" }),
+          node(INSTANCE, "instance", undefined, { label: "i" }),
+          node(VOLUME, "volume", undefined, { label: "v" }),
+        ],
+        [edge("backend", LB, INSTANCE, "warning"), edge("attachment", INSTANCE, VOLUME)],
+      ),
+    );
+    expect(text.split("\n").slice(-3)).toEqual([
+      "  %% legend:",
+      "  %%   Instance → Volume : #d289cb",
+      "  %%   Backend Warning : #e0a45a",
+    ]);
   });
 
   it("defines the status classes and assigns them per status", () => {

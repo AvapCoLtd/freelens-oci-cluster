@@ -10,6 +10,7 @@ import {
   fetchDnsZones,
   fetchFileSystem,
   fetchFssExport,
+  fetchFssMountEntries,
   fetchFssSnapshotPolicies,
   fetchFssSnapshotPolicyName,
   fetchGatewayStatus,
@@ -19,6 +20,7 @@ import {
   fetchNlbs,
   fetchNodePools,
   fetchNsgWithRules,
+  fetchResourceSearches,
   fetchRouteTable,
   fetchSecurityList,
   fetchSubnet,
@@ -54,6 +56,7 @@ const ROUTE_TABLE_ID = "ocid1.routetable.oc1.ap-tokyo-1.aaaaexample0001";
 const NSG_ID = "ocid1.networksecuritygroup.oc1.ap-tokyo-1.aaaaexample0001";
 const WAF_POLICY_ID = "ocid1.webappfirewallpolicy.oc1.ap-tokyo-1.aaaaexample0001";
 const VOLUME_ID = "ocid1.volume.oc1.ap-tokyo-1.aaaaexample0001";
+const OTHER_VOLUME_ID = "ocid1.volume.oc1.ap-tokyo-1.aaaaexample0002";
 const BACKUP_POLICY_ID = "ocid1.volumebackuppolicy.oc1..aaaaexample0001";
 const FSS_POLICY_ID = "ocid1.filesystemsnapshotpolicy.oc1.ap_tokyo_1.aaaaexample0001";
 const FILE_SYSTEM_ID = "ocid1.filesystem.oc1.ap_tokyo_1.aaaaexample0001";
@@ -67,6 +70,9 @@ const DRG_ID = "ocid1.drg.oc1.ap-tokyo-1.aaaaexample0001";
 const LB_ID = "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const NLB_ID = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const VNIC_ID = "ocid1.vnic.oc1.ap-tokyo-1.aaaaexample0001";
+const MOUNT_TARGET_ID = "ocid1.mounttarget.oc1.ap_tokyo_1.aaaaexample0001";
+const EXPORT_SET_ID = "ocid1.exportset.oc1.ap_tokyo_1.aaaaexample0001";
+const PRIVATE_IP_ID = "ocid1.privateip.oc1.ap-tokyo-1.aaaaexample0001";
 const QUERY_TEXT = `query all resources where (definedTags.namespace = 'Oracle-Tags' && definedTags.key = 'CreatedBy' && definedTags.value = '${CLUSTER_ID}')`;
 const OCI_COMMAND = "wsl oci";
 const FORBIDDEN_OR_NOT_FOUND: OciResult<never> = {
@@ -104,6 +110,19 @@ beforeEach(() => {
     return Promise.resolve(reply);
   });
 });
+
+/** exportを1つ持つmount target 1台の応答(IP照合の3コマンドが一通り呼ばれる形)。 */
+function replyFssMountTarget(): void {
+  replies.set(ociCommands.mountTargetList, {
+    ok: true,
+    data: [{ id: MOUNT_TARGET_ID, "export-set-id": EXPORT_SET_ID, "private-ip-ids": [PRIVATE_IP_ID] }],
+  });
+  replies.set(ociCommands.fssExportList, {
+    ok: true,
+    data: [{ id: FSS_EXPORT_ID, "export-set-id": EXPORT_SET_ID, "file-system-id": FILE_SYSTEM_ID, path: "/data" }],
+  });
+  replies.set(ociCommands.privateIpGet, { ok: true, data: { id: PRIVATE_IP_ID, "ip-address": "10.0.5.51" } });
+}
 
 /** 取得経路(fetch.ts / anchor.ts)がどのコマンド定義をどの引数で呼ぶか。 */
 const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }[] = [
@@ -338,6 +357,26 @@ const MAPPINGS: { name: string; call: () => Promise<unknown>; expected: Call[] }
     ],
   },
   {
+    name: "fetchFssMountEntries",
+    call: () => {
+      replyFssMountTarget();
+      return fetchFssMountEntries([COMPARTMENT_ID], [AVAILABILITY_DOMAIN], OCI_COMMAND);
+    },
+    expected: [
+      {
+        command: "mountTargetList",
+        params: { compartmentId: COMPARTMENT_ID, availabilityDomain: AVAILABILITY_DOMAIN },
+      },
+      { command: "fssExportList", params: { compartmentId: COMPARTMENT_ID } },
+      { command: "privateIpGet", params: { privateIpId: PRIVATE_IP_ID } },
+    ],
+  },
+  {
+    name: "fetchResourceSearches",
+    call: () => fetchResourceSearches([VOLUME_ID, FILE_SYSTEM_ID], OCI_COMMAND),
+    expected: [{ command: "resourceSearchByIds", params: { resourceIds: [VOLUME_ID, FILE_SYSTEM_ID] } }],
+  },
+  {
     name: "fetchVolumeBackupPolicies",
     call: () => fetchVolumeBackupPolicies([COMPARTMENT_ID], OCI_COMMAND),
     expected: [
@@ -371,7 +410,7 @@ describe("取得経路のコマンド割り当て", () => {
     expect(settingsSeen).toEqual([OCI_COMMAND]);
   });
 
-  it("定義表の全47コマンドが取得経路から呼ばれる", async () => {
+  it("定義表の全51コマンドが取得経路から呼ばれる", async () => {
     const used = new Set<string>();
     for (const mapping of MAPPINGS) {
       calls = [];
@@ -380,7 +419,7 @@ describe("取得経路のコマンド割り当て", () => {
       for (const call of calls) used.add(call.command);
     }
     expect(used).toEqual(new Set(Object.keys(ociCommands)));
-    expect(used.size).toBe(47);
+    expect(used.size).toBe(51);
   });
 });
 
@@ -461,7 +500,7 @@ describe("参照先の実体なし(孤立PV)の判別", () => {
     expect(calls.map((call) => call.command)).not.toContain("volumeGet");
   });
 
-  // FSSはexport / FileSystem自身のgetが失敗経路であり、これ以上確からしい存在確認が無い。
+  // 不在と権限不足の区別は、ここで切り出したOCIDだけを後段のResource Search(#39)で付ける。
   it("FSS export getの権限・不在はそのままresource_not_foundになる", async () => {
     replies.set(ociCommands.fssExportGet, FORBIDDEN_OR_NOT_FOUND);
     const result = await fetchFssExport(FSS_EXPORT_ID, OCI_COMMAND);
@@ -506,6 +545,86 @@ describe("多段取得の合成", () => {
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) return;
     expect(result.data.map((lb) => lb.id)).toEqual(["ocid1.loadbalancer.oc1..dup", "lb-1", "lb-2"]);
+  });
+});
+
+describe("FSSのmount target IP照合", () => {
+  it("mount target・export・private IPを突合してIP + path → FileSystemの対応を返す", async () => {
+    replyFssMountTarget();
+    expect(await fetchFssMountEntries([COMPARTMENT_ID], [AVAILABILITY_DOMAIN], OCI_COMMAND)).toEqual({
+      ok: true,
+      data: {
+        entries: [{ ipAddress: "10.0.5.51", path: "/data", exportId: FSS_EXPORT_ID, fileSystemId: FILE_SYSTEM_ID }],
+        mountTargetIps: ["10.0.5.51"],
+      },
+    });
+  });
+
+  it("exportを持たないmount targetもprivate IPを引き、IPだけを対応表に載せる(export不在の確定材料)", async () => {
+    replyFssMountTarget();
+    replies.set(ociCommands.fssExportList, { ok: true, data: [] });
+    expect(await fetchFssMountEntries([COMPARTMENT_ID], [AVAILABILITY_DOMAIN], OCI_COMMAND)).toEqual({
+      ok: true,
+      data: { entries: [], mountTargetIps: ["10.0.5.51"] },
+    });
+    expect(calls.map((call) => call.command)).toContain("privateIpGet");
+  });
+
+  it("private IP getが1つでも失敗すれば対応表全体を失敗にする", async () => {
+    replyFssMountTarget();
+    replies.set(ociCommands.privateIpGet, FORBIDDEN_OR_NOT_FOUND);
+    expect(await fetchFssMountEntries([COMPARTMENT_ID], [AVAILABILITY_DOMAIN], OCI_COMMAND)).toEqual(
+      FORBIDDEN_OR_NOT_FOUND,
+    );
+  });
+
+  it("mount target listが失敗すればprivate IPを引かずに失敗を返す", async () => {
+    replyFssMountTarget();
+    replies.set(ociCommands.mountTargetList, FORBIDDEN_OR_NOT_FOUND);
+    expect(await fetchFssMountEntries([COMPARTMENT_ID], [AVAILABILITY_DOMAIN], OCI_COMMAND)).toEqual(
+      FORBIDDEN_OR_NOT_FOUND,
+    );
+    expect(calls.map((call) => call.command)).not.toContain("privateIpGet");
+  });
+});
+
+describe("参照先の存在確認(Resource Search)", () => {
+  function searchHit(identifier: string, lifecycleState: string) {
+    return { identifier, "resource-type": "Volume", "lifecycle-state": lifecycleState };
+  }
+
+  it("複数OCIDを1回のSearchでまとめて引き、OCIDごとのヒット/非ヒットへ分ける", async () => {
+    const hit = searchHit(VOLUME_ID, "AVAILABLE");
+    replies.set(ociCommands.resourceSearchByIds, { ok: true, data: [hit] });
+    expect(await fetchResourceSearches([VOLUME_ID, OTHER_VOLUME_ID], OCI_COMMAND)).toEqual({
+      [VOLUME_ID]: { ok: true, data: hit },
+      [OTHER_VOLUME_ID]: { ok: true, data: null },
+    });
+    expect(calls).toEqual([{ command: "resourceSearchByIds", params: { resourceIds: [VOLUME_ID, OTHER_VOLUME_ID] } }]);
+  });
+
+  it("1回の上限(50件)を超えるOCIDは分割して引く", async () => {
+    const ids = Array.from({ length: 51 }, (_, index) => `ocid1.volume.oc1.ap-tokyo-1.aaaaexample${1000 + index}`);
+    const result = await fetchResourceSearches(ids, OCI_COMMAND);
+    expect(calls.map((call) => (call.params as { resourceIds: string[] }).resourceIds)).toEqual([
+      ids.slice(0, 50),
+      ids.slice(50),
+    ]);
+    expect(Object.keys(result)).toEqual(ids);
+  });
+
+  it("Searchが失敗したら、その照会に載せた全OCIDが失敗を持つ(セクションを止めない)", async () => {
+    const failure: OciResult<never> = { ok: false, kind: "other", raw: { message: "search failed" } };
+    replies.set(ociCommands.resourceSearchByIds, failure);
+    expect(await fetchResourceSearches([VOLUME_ID, OTHER_VOLUME_ID], OCI_COMMAND)).toEqual({
+      [VOLUME_ID]: failure,
+      [OTHER_VOLUME_ID]: failure,
+    });
+  });
+
+  it("対象が無ければociを呼ばない", async () => {
+    expect(await fetchResourceSearches([], OCI_COMMAND)).toEqual({});
+    expect(calls).toEqual([]);
   });
 });
 

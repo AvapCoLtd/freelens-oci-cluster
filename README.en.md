@@ -49,7 +49,17 @@ For non-OKE clusters, the extension displays an out-of-scope message.
 
 The search bar on each page filters displayed content, including expandable details.
 A header toggle enables auto-refresh; its interval is configurable in Preferences (60 seconds by default).
-The copy button in the Topology page header writes the diagram on screen to the clipboard as Mermaid flowchart text.
+
+On the Topology page, subnets with more than 10 instances collapse into per-node-pool aggregate nodes (click to expand).
+
+The legend at the bottom left toggles each row; clicking an edge kind hides it from the diagram (hidden rows stay dimmed).
+Allow edges derived from Security List / NSG ingress rules (Allowed by Security List / Allowed by NSG) have legend rows just like the other kinds.
+They are shown by default and can be hidden with a click.
+LB → Instance edges are colored by backend health, and the meaning of each color is listed indented under the same legend row.
+This health row is also a toggle; hiding, for example, Backend OK leaves only the warning and critical edges on the diagram.
+
+The copy button in the Topology page header writes the diagram on screen to the clipboard as Mermaid flowchart text, or as a standalone SVG.
+The copy button exports only the edges currently visible in the diagram.
 
 ## Settings
 

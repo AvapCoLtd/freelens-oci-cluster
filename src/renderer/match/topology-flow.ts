@@ -1,13 +1,14 @@
 import {
   cidrSummary,
+  type TopologyEdgeHealth,
   type TopologyEdgeKind,
   type TopologyGraph,
   type TopologyMissing,
   type TopologyNode,
-  type TopologyNodeKind,
   type TopologyNodeStatus,
 } from "./topology-graph";
 import type { TopologyLayout, TopologyLayoutNode, TopologyPoint } from "./topology-layout";
+import type { TopologyNodeKind } from "./topology-order";
 import { type RouteEdge, type RouteNode, routeTopologyEdges, type TopologySide } from "./topology-routes";
 
 export type { TopologySide } from "./topology-routes";
@@ -39,6 +40,8 @@ export const EDGE_KIND_LABEL: Record<TopologyEdgeKind, string> = {
   "volume-backup": "Volume → Backup Policy",
   "fss-snapshot": "File System → Snapshot Policy",
   route: "Subnet → Gateway",
+  "sl-allow": "Allowed by Security List",
+  "nsg-allow": "Allowed by NSG",
 };
 
 /** ノードは出るが情報が欠ける種別(target="detail")の文言。何が読めなくなるかを書く。 */
@@ -66,7 +69,48 @@ export const EDGE_KIND_COLOR: Record<TopologyEdgeKind, string> = {
   "volume-backup": "#a892d6",
   "fss-snapshot": "#6fb6bd",
   route: "#8b9196",
+  "sl-allow": "#b8c26a",
+  "nsg-allow": "#8f97e0",
 };
+
+export const EDGE_KIND_DASH: Partial<Record<TopologyEdgeKind, string>> = {
+  route: "4 4",
+  "sl-allow": "6 3",
+  "nsg-allow": "6 3",
+};
+
+/** Mermaidのlink破線から外す種別。routeを破線化すると既存の出力が変わる。 */
+export const MERMAID_DASH_EXCLUDED: ReadonlySet<TopologyEdgeKind> = new Set(["route"]);
+
+export const EDGE_KIND_OPACITY: Partial<Record<TopologyEdgeKind, number>> = {
+  route: 0.45,
+};
+
+/** warningはノードのwarning枠、unknownはノードのunknown枠と同じ値を使う。 */
+export const EDGE_HEALTH_COLOR: Record<TopologyEdgeHealth, string> = {
+  ok: "#4fb477",
+  "no-local-pod": "#6e8496",
+  unknown: "#9aa0a6",
+  warning: "#e0a45a",
+  critical: "#d9534f",
+};
+
+export const EDGE_HEALTH_LABEL: Record<TopologyEdgeHealth, string> = {
+  ok: "Backend OK",
+  "no-local-pod": "No Local Pod (by design)",
+  unknown: "Backend Unknown",
+  warning: "Backend Warning",
+  critical: "Backend Critical",
+};
+
+/** no-local-podは灰系の色だけではunknownと見分けにくく、線種でも分ける。 */
+export const EDGE_HEALTH_DASH: Partial<Record<TopologyEdgeHealth, string>> = {
+  "no-local-pod": "5 4",
+};
+
+export function edgeDashOf(edge: Pick<TopologyFlowEdge, "kind" | "health">): string | undefined {
+  return (edge.health === undefined ? undefined : EDGE_HEALTH_DASH[edge.health]) ?? EDGE_KIND_DASH[edge.kind];
+}
 
 /**
  * 親跨ぎエッジはコンテナノードより高いz-indexでないと親ボックスの下に隠れる。
@@ -126,6 +170,8 @@ export interface TopologyFlowEdge {
   /** 障害物を避けた直交折れ線(絶対座標)。描画側はこの点列をそのままSVGパスにする */
   points: TopologyPoint[];
   kind: TopologyEdgeKind;
+  /** backendエッジのみ: バックエンドヘルスの状態(colorはこの色で塗られている) */
+  health?: TopologyEdgeHealth;
   label: string;
   color: string;
 }
@@ -267,8 +313,9 @@ export function toTopologyFlow(graph: TopologyGraph, layout: TopologyLayout): To
       targetHandle: targetHandleId(targetSide),
       points: [],
       kind: edge.kind,
-      label: EDGE_KIND_LABEL[edge.kind],
-      color: EDGE_KIND_COLOR[edge.kind],
+      health: edge.health,
+      label: edge.label ?? EDGE_KIND_LABEL[edge.kind],
+      color: edge.health ? EDGE_HEALTH_COLOR[edge.health] : EDGE_KIND_COLOR[edge.kind],
     });
   }
   const routes = routeTopologyEdges(routeNodes, routeEdges);

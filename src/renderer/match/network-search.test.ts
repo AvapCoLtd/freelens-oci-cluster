@@ -137,6 +137,7 @@ const LB_ROW: LbRow = {
     },
   ],
   managedCertificateIds: ["ocid1.certificate.oc1.ap-tokyo-1.aaaaexample0001"],
+  tags: {},
 };
 
 const EMPTY_LB_CONTEXT: LbSearchContext = { nsgs: {}, managedCerts: {}, backendHealthOf: () => undefined };
@@ -172,6 +173,14 @@ describe("lbSearchValues", () => {
     expect(values).toContain("10.0.10.85:31234");
     expect(values).toContain("public-ssh-nsg");
     expect(values).toContain("22");
+  });
+
+  it("別クラスタを指すタグがあれば、行の注記と同じ文言をサマリに入れる", () => {
+    const other = "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0002";
+    const row: LbRow = { ...LB_ROW, tags: { "system-tags": { "orcl-containerengine": { Cluster: other } } } };
+    const ctx = { ...EMPTY_LB_CONTEXT, clusterId: "ocid1.cluster.oc1.ap-tokyo-1.aaaaexample0001" };
+    expect(texts(lbSearchValues(row, ctx).summary)).toContain(`Managed by another cluster (system tag): ${other}`);
+    expect(texts(lbSearchValues(row, EMPTY_LB_CONTEXT).summary)).toHaveLength(5);
   });
 
   it("backend health・managedCerts・NSGが未取得でも落ちない", () => {

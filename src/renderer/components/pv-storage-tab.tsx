@@ -1,22 +1,28 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
+import type * as React from "react";
 import type { ClusterOciData } from "../fetch/fetch";
+import { type ClusterTagMismatch, clusterTagMismatchesOf, clusterTagMismatchText } from "../match/cluster-tag";
 import type { OciConsoleResourceType } from "../match/console-url";
 import { filterRows } from "../match/filter-rows";
 import {
   distinctBlockVolumeOcids,
-  distinctFssRefOcids,
-  fileSystemOcidOf,
-  fileSystemOcidsOf,
+  existenceProbeOcids,
+  type FssFileSystemRef,
+  fallbackFssExportOcids,
+  fssFileSystemIdsOf,
+  fssFileSystemRefOf,
   getCsiSource,
   isFssExportOcid,
   isOrphanedPvStorage,
-  type PvStorageOrphanKind,
+  needsFssMountEntries,
+  type PvStorageOrphan,
   type PvStorageResolution,
   resolvePvStorage,
 } from "../match/pv-storage";
 import { entriesReady, sectionsReady } from "../match/section-ready";
 import { sortRows } from "../match/sort-rows";
+import { ClusterTagNotes } from "./cluster-tag-notes";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -39,16 +45,47 @@ interface StorageResolution {
   backupLabel: string;
   backupPolicyId?: string;
   backupConsoleType?: OciConsoleResourceType;
-  /** 参照先の実体がOCIに存在しないと確定したPV(残骸)。エラーではなく観測結果として出す */
   orphaned?: true;
+  /** FSSのみ: mount target IP / export pathで照合できず、volumeHandle先頭のOCIDから推定した */
+  inferred?: true;
+  /** FSSのみ: 照合できたFSSとvolumeHandle先頭のOCIDが食い違うときの注記 */
+  handleNote?: string;
+  /** 参照先の実体が現クラスタとは別のクラスタを指すタグを持つ(FSSはIP:pathで照合した実体のタグ) */
+  tagMismatches: ClusterTagMismatch[];
 }
 
-// OCIは権限不足と不在に同じ応答を返すため、不在と断定せず両方を読める文言にする。
-const ORPHAN_MESSAGE: Record<PvStorageOrphanKind, string> = {
-  volume: "Not found in OCI or not accessible (orphaned PV)",
-  filesystem: "Not found in OCI or not accessible (orphaned PV)",
-  export: "Export not found or not accessible (file system may still exist)",
+const STORAGE_ORPHAN_MESSAGE: Record<PvStorageOrphan["certainty"], string> = {
+  absent: "Not found in OCI (orphaned PV)",
+  forbidden: "Exists in OCI but not readable (insufficient permission)",
+  unknown: "Not found in OCI or not readable (unconfirmed)",
 };
+
+const ORPHAN_MESSAGE: Record<PvStorageOrphan["kind"], Record<PvStorageOrphan["certainty"], string>> = {
+  volume: STORAGE_ORPHAN_MESSAGE,
+  filesystem: STORAGE_ORPHAN_MESSAGE,
+  export: {
+    absent: "Export not found (file system may still exist)",
+    forbidden: "Export exists but not readable (insufficient permission)",
+    unknown: "Export not found or not readable (file system may still exist)",
+  },
+};
+
+const INFERRED_LABEL = "inferred";
+const INFERRED_TITLE =
+  "Not matched by mount target IP and export path; inferred from the OCID at the head of volumeHandle";
+
+const NOTE_STYLE: React.CSSProperties = {
+  color: "var(--textColorSecondary, #9aa0a6)",
+  fontSize: 12,
+};
+
+function fssMarksOf(ref: FssFileSystemRef): Pick<StorageResolution, "inferred" | "handleNote"> {
+  if (ref.inferred) return { inferred: true };
+  const handleOcid = ref.conflictingHandleOcid;
+  if (!handleOcid) return {};
+  const target = isFssExportOcid(handleOcid) ? "a different export" : "a different file system";
+  return { handleNote: `volumeHandle OCID points to ${target} (${handleOcid})` };
+}
 
 // バックアップポリシー名の表示(未割当="None"は保護されていないボリュームの検出材料)。
 function backupPolicyLabel(policy: ClusterOciData["volumeBackupPolicies"][string] | undefined): string {
@@ -56,15 +93,20 @@ function backupPolicyLabel(policy: ClusterOciData["volumeBackupPolicies"][string
   return policy.data.policyName ?? "None";
 }
 
-function resolveStorage(data: ClusterOciData, resolution: PvStorageResolution): StorageResolution {
+function resolveStorage(data: ClusterOciData, resolution: PvStorageResolution, clusterId: string): StorageResolution {
+  const fssRef = resolution.kind === "file_system" ? fssFileSystemRefOf(resolution, data) : undefined;
+  const fssMarks = fssRef ? fssMarksOf(fssRef) : {};
   const orphaned = isOrphanedPvStorage(resolution, data);
   if (orphaned) {
     return {
-      displayName: ORPHAN_MESSAGE[orphaned],
-      ocid: resolution.ocid,
+      displayName: ORPHAN_MESSAGE[orphaned.kind][orphaned.certainty],
+      // IP:pathで照合できたPVの参照先は先頭OCIDではなく照合したFileSystemになる。
+      ocid: fssRef && !fssRef.inferred ? fssRef.fileSystemId : resolution.ocid,
       kindLabel: resolution.kind === "block_volume" ? "Volume" : "FSS",
       backupLabel: "-",
       orphaned: true,
+      tagMismatches: [],
+      ...(orphaned.byMountPath ? {} : fssMarks),
     };
   }
   if (resolution.kind === "block_volume" && resolution.ocid) {
@@ -81,6 +123,7 @@ function resolveStorage(data: ClusterOciData, resolution: PvStorageResolution): 
         backupLabel,
         backupPolicyId,
         backupConsoleType: "volume-backup-policy",
+        tagMismatches: [],
       };
     }
     const volume = data.volumes.data.find((v) => v.id === ocid);
@@ -94,13 +137,22 @@ function resolveStorage(data: ClusterOciData, resolution: PvStorageResolution): 
       backupLabel,
       backupPolicyId,
       backupConsoleType: "volume-backup-policy",
+      tagMismatches: clusterTagMismatchesOf(volume, clusterId),
     };
   }
-  if (resolution.kind === "file_system" && resolution.ocid) {
-    const ocid = fileSystemOcidOf(resolution.ocid, data.fssExports);
+  if (resolution.kind === "file_system" && fssRef) {
+    const ocid = fssRef.fileSystemId;
     const fsResult = ocid ? data.fileSystems[ocid] : undefined;
     if (!fsResult?.ok) {
-      return { displayName: "-", kindLabel: "FSS", ocid, consoleType: "filesystem", backupLabel: "-" };
+      return {
+        displayName: "-",
+        kindLabel: "FSS",
+        ocid,
+        consoleType: "filesystem",
+        backupLabel: "-",
+        tagMismatches: [],
+        ...fssMarks,
+      };
     }
     const policyId = fsResult.data["filesystem-snapshot-policy-id"];
     return {
@@ -112,9 +164,11 @@ function resolveStorage(data: ClusterOciData, resolution: PvStorageResolution): 
       backupLabel: policyId ? backupPolicyLabel(data.fssSnapshotPolicies[policyId]) : "None",
       backupPolicyId: policyId,
       backupConsoleType: "fss-snapshot-policy",
+      tagMismatches: clusterTagMismatchesOf(fsResult.data, clusterId),
+      ...fssMarks,
     };
   }
-  return { displayName: "-", kindLabel: "Unsupported", backupLabel: "-" };
+  return { displayName: "-", kindLabel: "Unsupported", backupLabel: "-", tagMismatches: [] };
 }
 
 type PvColumn = "pv" | "pvc" | "entity" | "kind" | "size" | "backup" | "lifecycle";
@@ -142,6 +196,7 @@ function searchTextOf(row: PvRow): readonly (string | number | undefined)[] {
     row.pvcLabel,
     // orphaned行のentity列はORPHAN_MESSAGE(実体名ではない)ため、説明文で行が引けないよう外す。
     row.storage.orphaned ? undefined : row.storage.displayName,
+    ...row.storage.tagMismatches.map(clusterTagMismatchText),
     row.storage.kindLabel,
     row.storage.sizeGb,
     row.storage.backupLabel,
@@ -152,11 +207,14 @@ function searchTextOf(row: PvRow): readonly (string | number | undefined)[] {
 /** 一覧の各セルが埋まる材料(OCI側)が揃ったか。PV行はK8s由来なので行数自体は先に確定している。 */
 function storageCellsReady(data: ClusterOciData, resolutions: PvStorageResolution[]): boolean {
   if (!sectionsReady(data.volumes, data.taggedResources)) return false;
-  const refOcids = distinctFssRefOcids(resolutions);
-  if (!entriesReady(data.fssExports, refOcids.filter(isFssExportOcid))) return false;
-  const fileSystemIds = fileSystemOcidsOf(refOcids, data.fssExports);
+  // IP:pathの照合材料が来る前に出すと、全FSS行が一旦「推定」になってから差し替わる。
+  if (needsFssMountEntries(resolutions) && !sectionsReady(data.fssMountEntries)) return false;
+  if (!entriesReady(data.fssExports, fallbackFssExportOcids(resolutions, data.fssMountEntries))) return false;
+  const fileSystemIds = fssFileSystemIdsOf(resolutions, data);
   if (!entriesReady(data.fileSystems, fileSystemIds)) return false;
   if (!entriesReady(data.volumeBackupPolicies, distinctBlockVolumeOcids(resolutions))) return false;
+  // 存在確認が来る前に出すと、孤立PVの行が一旦「不明」になってから確定の文言へ差し替わる。
+  if (!entriesReady(data.resourceSearches, existenceProbeOcids(resolutions, data))) return false;
   const policyIds = fileSystemIds
     .map((id) => {
       const fileSystem = data.fileSystems[id];
@@ -170,9 +228,10 @@ export interface PvStorageTabProps {
   data: ClusterOciData;
   region: string | undefined;
   search: SearchState;
+  clusterId: string;
 }
 
-export const PvStorageTab = observer(function PvStorageTab({ data, region, search }: PvStorageTabProps) {
+export const PvStorageTab = observer(function PvStorageTab({ data, region, search, clusterId }: PvStorageTabProps) {
   const pvStore = Renderer.K8sApi.persistentVolumeStore;
   const [sort, toggleSort] = useColumnSort<PvColumn>("pv");
   const { query, setQuery } = search;
@@ -204,7 +263,7 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region, searc
       key: pv.getId(),
       pvName: pv.getName(),
       pvcLabel: claimRef ? `${claimRef.namespace ?? "-"}/${claimRef.name}` : "-",
-      storage: resolveStorage(data, resolution),
+      storage: resolveStorage(data, resolution, clusterId),
     };
   });
   const sortedRows = sortRows(filterRows(rows, query, searchTextOf), SORT_VALUE[sort.column], sort.direction);
@@ -262,7 +321,16 @@ export const PvStorageTab = observer(function PvStorageTab({ data, region, searc
                 <tr key={row.key} style={storage.orphaned ? UNMATCHED_ROW_STYLE : undefined}>
                   <td style={TD_STYLE}>{row.pvName}</td>
                   <td style={TD_STYLE}>{row.pvcLabel}</td>
-                  <td style={TD_STYLE}>{storage.displayName}</td>
+                  <td style={TD_STYLE}>
+                    {storage.displayName}
+                    {storage.inferred && (
+                      <span style={{ ...NOTE_STYLE, marginLeft: 6 }} title={INFERRED_TITLE}>
+                        ({INFERRED_LABEL})
+                      </span>
+                    )}
+                    {storage.handleNote && <div style={NOTE_STYLE}>{storage.handleNote}</div>}
+                    <ClusterTagNotes mismatches={storage.tagMismatches} />
+                  </td>
                   <td style={TD_STYLE}>{storage.kindLabel}</td>
                   <td style={TD_STYLE}>{storage.kindLabel === "Volume" ? (storage.sizeGb ?? "-") : "-"}</td>
                   <td style={TD_STYLE}>

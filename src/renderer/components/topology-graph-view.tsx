@@ -18,16 +18,23 @@ import {
 } from "@xyflow/react";
 import xyflowCss from "@xyflow/react/dist/style.css?inline";
 import * as React from "react";
+import type { TopologyLegendRow } from "../match/topology-edge-filter";
 import type { TopologyFlow, TopologyFlowNodeData, TopologySide } from "../match/topology-flow";
 import {
+  EDGE_HEALTH_COLOR,
+  EDGE_HEALTH_DASH,
+  EDGE_HEALTH_LABEL,
   EDGE_KIND_COLOR,
+  EDGE_KIND_DASH,
   EDGE_KIND_LABEL,
+  EDGE_KIND_OPACITY,
+  edgeDashOf,
   sourceHandleId,
   TOPOLOGY_EDGE_Z_INDEX,
   TOPOLOGY_SIDES,
   targetHandleId,
 } from "../match/topology-flow";
-import { TOPOLOGY_EDGE_KINDS, type TopologyEdgeKind } from "../match/topology-graph";
+import type { TopologyEdgeHealth, TopologyEdgeKind } from "../match/topology-graph";
 import type { TopologyPoint } from "../match/topology-layout";
 import { matchTopologyNodes } from "../match/topology-search";
 import type { InjectedStyle } from "./injected-style";
@@ -215,9 +222,6 @@ const DEFAULT_EDGE_OPTIONS = {
   markerEnd: { type: MarkerType.ArrowClosed, color: SECONDARY_COLOR },
 };
 
-// routeは経路表の写しで本数が多い。主要な関連(backend/waf-lb/service-lb/pv-storage等)と見分ける。
-const ROUTE_EDGE_OPACITY = 0.45;
-
 const ACCENT_COLOR = "var(--primary, #3d90ce)";
 const DIM_OPACITY = 0.12;
 const DIM_NODE_OPACITY = 0.25;
@@ -239,6 +243,16 @@ function toFlowNodes(flow: TopologyFlow): Node[] {
   }));
 }
 
+function edgeStyleOf(edge: TopologyFlow["edges"][number]): React.CSSProperties {
+  const dash = edgeDashOf(edge);
+  const opacity = EDGE_KIND_OPACITY[edge.kind];
+  return {
+    stroke: edge.color,
+    ...(opacity === undefined ? {} : { strokeOpacity: opacity }),
+    ...(dash === undefined ? {} : { strokeDasharray: dash }),
+  };
+}
+
 function toFlowEdges(flow: TopologyFlow): Edge[] {
   return flow.edges.map((edge) => ({
     id: edge.id,
@@ -248,10 +262,7 @@ function toFlowEdges(flow: TopologyFlow): Edge[] {
     targetHandle: edge.targetHandle,
     ariaLabel: edge.label,
     data: { points: edge.points },
-    style:
-      edge.kind === "route"
-        ? { stroke: edge.color, strokeOpacity: ROUTE_EDGE_OPACITY, strokeDasharray: "4 4" }
-        : { stroke: edge.color },
+    style: edgeStyleOf(edge),
     markerEnd: { type: MarkerType.ArrowClosed, color: edge.color, width: 14, height: 14 },
   }));
 }
@@ -363,43 +374,101 @@ const LEGEND_ROW_STYLE: React.CSSProperties = {
   alignItems: "center",
   gap: 6,
   whiteSpace: "nowrap",
+  appearance: "none",
+  border: "none",
+  background: "none",
+  padding: 0,
+  margin: 0,
+  font: "inherit",
+  color: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
 };
 
-function EdgeLegend({ kinds }: { kinds: readonly TopologyEdgeKind[] }) {
-  if (kinds.length === 0) return null;
+const LEGEND_ROW_OFF_STYLE: React.CSSProperties = { ...LEGEND_ROW_STYLE, opacity: 0.4 };
+
+const LEGEND_HEALTH_ROW_STYLE: React.CSSProperties = { ...LEGEND_ROW_STYLE, paddingLeft: 12 };
+
+const LEGEND_HEALTH_ROW_OFF_STYLE: React.CSSProperties = { ...LEGEND_HEALTH_ROW_STYLE, opacity: 0.4 };
+
+function legendSampleStyle(color: string, dash?: string, opacity?: number): React.CSSProperties {
+  return {
+    width: 16,
+    flexShrink: 0,
+    borderTop: `2px ${dash ? "dashed" : "solid"} ${color}`,
+    opacity: opacity ?? 1,
+  };
+}
+
+function EdgeLegend({
+  rows,
+  onToggleKind,
+  onToggleHealth,
+}: {
+  rows: readonly TopologyLegendRow[];
+  onToggleKind: (kind: TopologyEdgeKind) => void;
+  onToggleHealth: (health: TopologyEdgeHealth) => void;
+}) {
+  if (rows.length === 0) return null;
   return (
-    <Panel position="bottom-left" style={LEGEND_STYLE}>
-      {kinds.map((kind) => (
-        <div key={kind} style={LEGEND_ROW_STYLE}>
-          <span
-            style={{
-              width: 16,
-              flexShrink: 0,
-              borderTop: `2px ${kind === "route" ? "dashed" : "solid"} ${EDGE_KIND_COLOR[kind]}`,
-              opacity: kind === "route" ? ROUTE_EDGE_OPACITY : 1,
-            }}
-          />
-          {EDGE_KIND_LABEL[kind]}
-        </div>
-      ))}
+    // nopanが無いと行を押し下げたままのわずかな動きで図がパンする。
+    <Panel position="bottom-left" className="nopan" style={LEGEND_STYLE}>
+      {rows.map((row) =>
+        row.type === "health" ? (
+          <button
+            key={row.health}
+            type="button"
+            aria-pressed={row.shown}
+            title={row.shown ? "Click to hide" : "Click to show"}
+            style={row.shown ? LEGEND_HEALTH_ROW_STYLE : LEGEND_HEALTH_ROW_OFF_STYLE}
+            onClick={() => onToggleHealth(row.health)}
+          >
+            <span style={legendSampleStyle(EDGE_HEALTH_COLOR[row.health], EDGE_HEALTH_DASH[row.health])} />
+            {`${EDGE_HEALTH_LABEL[row.health]} (${row.count})`}
+          </button>
+        ) : (
+          <button
+            key={row.kind}
+            type="button"
+            aria-pressed={row.shown}
+            title={row.shown ? "Click to hide" : "Click to show"}
+            style={row.shown ? LEGEND_ROW_STYLE : LEGEND_ROW_OFF_STYLE}
+            onClick={() => onToggleKind(row.kind)}
+          >
+            <span
+              style={legendSampleStyle(
+                EDGE_KIND_COLOR[row.kind],
+                EDGE_KIND_DASH[row.kind],
+                EDGE_KIND_OPACITY[row.kind],
+              )}
+            />
+            {`${EDGE_KIND_LABEL[row.kind]} (${row.count})`}
+          </button>
+        ),
+      )}
     </Panel>
   );
 }
 
 export interface TopologyGraphViewProps {
   flow: TopologyFlow;
+  legendRows: readonly TopologyLegendRow[];
+  onToggleEdgeKind: (kind: TopologyEdgeKind) => void;
+  onToggleEdgeHealth: (health: TopologyEdgeHealth) => void;
   /** マッチしないノード・エッジを減光する検索語。空文字は減光なし */
   searchQuery: string;
   onSelectNode: (id: string | undefined) => void;
 }
 
-export function TopologyGraphView({ flow, searchQuery, onSelectNode }: TopologyGraphViewProps) {
+export function TopologyGraphView({
+  flow,
+  legendRows,
+  onToggleEdgeKind,
+  onToggleEdgeHealth,
+  searchQuery,
+  onSelectNode,
+}: TopologyGraphViewProps) {
   const elements = React.useMemo(() => ({ nodes: toFlowNodes(flow), edges: toFlowEdges(flow) }), [flow]);
-  // 凡例は図に実在する種別だけ挙げる。使われていない色を並べると対応付けの手がかりが増えない。
-  const legendKinds = React.useMemo(() => {
-    const present = new Set(flow.edges.map((edge) => edge.kind));
-    return TOPOLOGY_EDGE_KINDS.filter((kind) => present.has(kind));
-  }, [flow]);
   // 選択状態はReact Flow側が持つ変更(onNodesChange)で入るため、導出結果をそのまま流し込むのは図の差し替え時だけにする。
   const [nodes, setNodes, onNodesChange] = useNodesState(elements.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(elements.edges);
@@ -468,7 +537,7 @@ export function TopologyGraphView({ flow, searchQuery, onSelectNode }: TopologyG
       {matched?.size === 0 && (
         <Panel position="top-center" style={NO_MATCH_STYLE}>{`No nodes match "${searchQuery}"`}</Panel>
       )}
-      <EdgeLegend kinds={legendKinds} />
+      <EdgeLegend rows={legendRows} onToggleKind={onToggleEdgeKind} onToggleHealth={onToggleEdgeHealth} />
     </ReactFlow>
   );
 }

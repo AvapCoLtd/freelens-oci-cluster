@@ -38,8 +38,10 @@ function baseData(overrides: Partial<ClusterOciData>): ClusterOciData {
     volumeAttachments: NOT_REQUESTED,
     fileSystems: {},
     fssExports: {},
+    fssMountEntries: { ok: true, data: { entries: [], mountTargetIps: [] } },
     vcns: {},
     nodePools: NOT_REQUESTED,
+    nodePoolDetails: {},
     wafs: NOT_REQUESTED,
     subnets: {},
     securityLists: {},
@@ -52,6 +54,7 @@ function baseData(overrides: Partial<ClusterOciData>): ClusterOciData {
     managedCerts: {},
     volumeBackupPolicies: {},
     fssSnapshotPolicies: {},
+    resourceSearches: {},
     backendHealths: {},
     ...overrides,
   };

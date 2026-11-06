@@ -7,5 +7,13 @@ const TOOLTIP: Record<CopyStatus, string> = { idle: "Copy OCID", copied: "Copied
 export function OcidCopyButton({ ocid }: { ocid: string }) {
   const { status, copy } = useCopyFeedback();
 
-  return <Icon material={ICON[status]} tooltip={TOOLTIP[status]} interactive small onClick={() => copy(ocid)} />;
+  return (
+    <Icon
+      material={ICON[status]}
+      tooltip={TOOLTIP[status]}
+      interactive
+      small
+      onClick={() => copy(ocid, TOOLTIP.idle)}
+    />
+  );
 }

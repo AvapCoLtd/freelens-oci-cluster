@@ -2,6 +2,7 @@ import { type OciCommandDef, ociCommands } from "../cli/command-defs";
 import { runOciCommand } from "../cli/run";
 import { gatewayKindOf, type OciGatewayStatusView } from "../match/gateway-status";
 import { routeEntityKind } from "../match/network-path";
+import { fssMountIndexOf, mountTargetPrivateIpIds } from "../match/pv-storage";
 import type { OciResult } from "../oci/result";
 import type {
   OciAnyGateway,
@@ -16,12 +17,14 @@ import type {
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
   OciFssExport,
+  OciFssMountIndex,
   OciInstance,
   OciInternetGateway,
   OciLoadBalancer,
   OciLocalPeeringGateway,
   OciManagedCertView,
   OciNetworkLoadBalancerSummary,
+  OciNodePool,
   OciNodePoolSummary,
   OciNsg,
   OciNsgWithRules,
@@ -53,9 +56,12 @@ export interface ClusterOciData {
   /** Instance→Block Volumeの対応(compartment一括。クラスタ外Instanceの分も含む) */
   volumeAttachments: OciResult<OciVolumeAttachment[]>;
   fileSystems: Record<string, OciResult<OciFileSystem>>;
-  /** Export OCID→FSS export。volumeHandleがExport OCIDのPVでFileSystem OCIDを解決する段 */
+  /** Export OCID→FSS export。IP:pathで照合できずvolumeHandle先頭がExport OCIDのPVでFileSystem OCIDを解決する段 */
   fssExports: Record<string, OciResult<OciFssExport>>;
+  /** FSS mount target IP + export path→FileSystem。volumeHandleのIP:pathから実際にマウントしているFSSを決める */
+  fssMountEntries: OciResult<OciFssMountIndex>;
   nodePools: OciResult<OciNodePoolSummary[]>;
+  nodePoolDetails: Record<string, OciResult<OciNodePool>>;
   wafs: OciResult<OciWafSummary[]>;
   // per-OCID遅延取得のRecord: エントリ不在=取得中(UI側は「取得中」表示に落とす)。
   vcns: Record<string, OciResult<OciVcn>>;
@@ -75,6 +81,8 @@ export interface ClusterOciData {
   volumeBackupPolicies: Record<string, OciResult<OciBackupPolicyView>>;
   /** FSSスナップショットポリシーOCID→名前 */
   fssSnapshotPolicies: Record<string, OciResult<OciBackupPolicyView>>;
+  /** PVの参照先のうち自身のgetが404だったOCID→Resource Searchのヒット(null=ヒットなし)。不在と権限不足の判別材料 */
+  resourceSearches: Record<string, OciResult<OciResourceSummary | null>>;
   backendHealths: Record<string, OciResult<OciBackendSetHealthView>>;
 }
 
@@ -97,9 +105,9 @@ async function toSectionResult<T>(promise: Promise<OciResult<T>>): Promise<OciRe
 }
 
 /**
- * リソース自身のgetの結果を、実体なし(resource_not_found)を切り出した形へ寄せる。
- * OCIは権限不足も不在も404 NotAuthorizedOrNotFoundで返すが、そのリソース自身のgetがこれを
- * 返した以上これ以上確からしい存在確認は無いため、残骸(孤立PV)側に倒す。
+ * リソース自身のgetの結果を、実体を確認できなかった形(resource_not_found)へ切り出す。
+ * OCIは権限不足も不在も404 NotAuthorizedOrNotFoundで返すため、この時点ではどちらか決まらない。
+ * 区別は失敗したOCIDだけをまとめて引くResource Search(#39)で付ける。
  */
 async function toResourceResult<T>(promise: Promise<OciResult<T>>): Promise<OciResult<T>> {
   const result = await promise;
@@ -226,9 +234,77 @@ export function fetchFileSystem(fsId: string, ociCliCommand: string): Promise<Oc
   return toSectionResult(toResourceResult(run(ociCommands.fileSystemGet, { fileSystemId: fsId }, ociCliCommand)));
 }
 
-// #30 FSS export(pv-storageページ、volumeHandleがExport OCIDのPVのみ)。#8へ渡すFileSystem OCIDを得る。
+// #30 FSS export(pv-storageページ、IP:pathで照合できずvolumeHandleがExport OCIDのPVのみ)。
+// #8へ渡すFileSystem OCIDを得る。
 export function fetchFssExport(exportId: string, ociCliCommand: string): Promise<OciResult<OciFssExport>> {
   return toSectionResult(toResourceResult(run(ociCommands.fssExportGet, { exportId }, ociCliCommand)));
+}
+
+// #36-#38 FSSのmount target IP + export path→FileSystemの対応表(pv-storage/topologyページ)。
+// 1つでも失敗すれば対応表全体を失敗とする(PV側は先頭OCIDへ落ちる)。
+export function fetchFssMountEntries(
+  compartmentIds: readonly string[],
+  availabilityDomains: readonly string[],
+  ociCliCommand: string,
+): Promise<OciResult<OciFssMountIndex>> {
+  const mountTargetScopes = compartmentIds.flatMap((compartmentId) =>
+    availabilityDomains.map((availabilityDomain) => ({ compartmentId, availabilityDomain })),
+  );
+  return toSectionResult(
+    (async (): Promise<OciResult<OciFssMountIndex>> => {
+      const [mountTargets, exports] = await Promise.all([
+        mergeLists(mountTargetScopes.map((scope) => run(ociCommands.mountTargetList, scope, ociCliCommand))),
+        listAcrossCompartments(
+          (compartmentId) => run(ociCommands.fssExportList, { compartmentId }, ociCliCommand),
+          compartmentIds,
+        ),
+      ]);
+      if (!mountTargets.ok) return mountTargets;
+      if (!exports.ok) return exports;
+      const privateIpIds = mountTargetPrivateIpIds(mountTargets.data);
+      const privateIps = await Promise.all(
+        privateIpIds.map((privateIpId) => run(ociCommands.privateIpGet, { privateIpId }, ociCliCommand)),
+      );
+      const ipAddressById = new Map<string, string>();
+      for (const privateIp of privateIps) {
+        if (!privateIp.ok) return privateIp;
+        const ipAddress = privateIp.data["ip-address"];
+        if (ipAddress) ipAddressById.set(privateIp.data.id, ipAddress);
+      }
+      return { ok: true, data: fssMountIndexOf(mountTargets.data, ipAddressById, exports.data) };
+    })(),
+  );
+}
+
+/** Resource Search 1回でOR結合するOCID数。50件(クエリ約3.5KB)を1回で引けることを実機で確認した(2026-10-02)。 */
+const RESOURCE_SEARCH_BATCH_SIZE = 50;
+
+// #39 PVの参照先のうち自身のgetが404だったOCIDの存在確認(pv-storage/topologyページ、失敗時の追撃のみ)。
+// Searchが失敗した束のOCIDはその失敗を持つ。
+export async function fetchResourceSearches(
+  resourceIds: readonly string[],
+  ociCliCommand: string,
+): Promise<Record<string, OciResult<OciResourceSummary | null>>> {
+  const batches: string[][] = [];
+  for (let start = 0; start < resourceIds.length; start += RESOURCE_SEARCH_BATCH_SIZE) {
+    batches.push(resourceIds.slice(start, start + RESOURCE_SEARCH_BATCH_SIZE));
+  }
+  const searched = await Promise.all(
+    batches.map(async (ids) => ({
+      ids,
+      result: await toSectionResult(run(ociCommands.resourceSearchByIds, { resourceIds: ids }, ociCliCommand)),
+    })),
+  );
+  const record: Record<string, OciResult<OciResourceSummary | null>> = {};
+  for (const { ids, result } of searched) {
+    if (!result.ok) {
+      for (const id of ids) record[id] = result;
+      continue;
+    }
+    const hits = new Map(result.data.map((item) => [item.identifier, item]));
+    for (const id of ids) record[id] = { ok: true, data: hits.get(id) ?? null };
+  }
+  return record;
 }
 
 // #9 ノードプール一覧(nodes/networkページ)。
@@ -238,6 +314,12 @@ export function fetchNodePools(
   ociCliCommand: string,
 ): Promise<OciResult<OciNodePoolSummary[]>> {
   return toSectionResult(run(ociCommands.nodePoolList, { compartmentId, clusterId }, ociCliCommand));
+}
+
+// #1b ノードプール本体(topologyページ、プールごとに1回)。
+// 一覧応答は配下Instanceを持たないため、Instance→プールの対応はこのgetの`nodes[]`でしか取れない。
+export function fetchNodePool(nodePoolId: string, ociCliCommand: string): Promise<OciResult<OciNodePool>> {
+  return toSectionResult(run(ociCommands.nodePoolGet, { nodePoolId }, ociCliCommand));
 }
 
 // #10 WAF一覧(networkページ)。classic LBのみ対象(NLBはWAF非対応)。

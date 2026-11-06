@@ -81,6 +81,7 @@ const FIXTURE_DEFS: { file: string; def: OciCommandDef<never, unknown> }[] = [
   { file: "29-network-vcn-get.json", def: ociCommands.vcnGet },
   { file: "30-fs-export-get.json", def: ociCommands.fssExportGet },
   { file: "31-bv-volume-get.json", def: ociCommands.volumeGet },
+  { file: "39-search-structured-search-by-ids.json", def: ociCommands.resourceSearchByIds },
 ];
 
 /** フィクスチャの`data`(collectionは要素配列)をそのまま取り出したもの。 */
@@ -213,6 +214,16 @@ describe("parseOciStdout(フィクスチャ)", () => {
       (volume) => volume.id === data.id,
     );
     expect(data).toEqual(listed);
+  });
+
+  it("#39 search resource structured-search(OCIDのOR結合。ヒットしたOCIDだけが返る)", () => {
+    const { data, nextPage } = parseFixture(ociCommands.resourceSearchByIds, "39-search-structured-search-by-ids.json");
+    // 採取時は実在2件 + 架空1件のOCIDを照会した。架空のOCIDは結果に現れない。
+    expect(data.map((item) => [item.identifier, item["resource-type"], item["lifecycle-state"]])).toEqual([
+      ["ocid1.volume.oc1.ap-tokyo-1.aaaaexample0006", "Volume", "AVAILABLE"],
+      ["ocid1.filesystem.oc1.ap_tokyo_1.aaaaexample0003", "FileSystem", "ACTIVE"],
+    ]);
+    expect(nextPage).toBeUndefined();
   });
 
   it("#9 ce node-pool list", () => {

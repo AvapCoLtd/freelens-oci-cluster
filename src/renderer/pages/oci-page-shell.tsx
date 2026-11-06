@@ -42,6 +42,7 @@ export interface OciPageShellProps {
     region: string | undefined,
     clusterKey: string,
     search: SearchState,
+    clusterId: string,
   ) => React.ReactNode;
 }
 
@@ -84,7 +85,7 @@ export const OciPageShell = observer(function OciPageShell({ page, renderLoaded 
           />
         );
       case "loaded":
-        return renderLoaded(state.data, region, clusterKey, search);
+        return renderLoaded(state.data, region, clusterKey, search, state.anchor.clusterId);
     }
   })();
 

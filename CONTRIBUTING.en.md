@@ -35,7 +35,8 @@ make clean    # remove node_modules/out/*.tgz/.pnpm-store
 
 ### First-time setup
 
-Before using `make deploy` on a new environment, install the extension once via the [README](README.en.md#install) steps (drag the `.tgz` onto the Extensions screen in FreeLens). A `.tgz` from `make pack` works too if you just want to try unreleased changes.
+Before using `make deploy` on a new environment, install the extension once via the [README](README.en.md#install) steps (drag the `.tgz` onto the Extensions screen in FreeLens).
+A `.tgz` from `make pack` works too if you just want to try unreleased changes.
 
 `make deploy` only updates an already-installed extension; running it before the extension has ever been installed may not take effect.
 

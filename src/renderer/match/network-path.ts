@@ -1,5 +1,5 @@
 import type { ClusterOciData } from "../fetch/fetch";
-import type { OciLoadBalancer, OciNetworkLoadBalancerSummary, OciWafSummary } from "../oci/types";
+import type { OciLoadBalancer, OciNetworkLoadBalancerSummary, OciTagged, OciWafSummary } from "../oci/types";
 import { type GatewayKind, gatewayKindOf, ocidTypeSegment } from "./gateway-status";
 import { type LbCertInfo, lbCertificateRows, managedCertificateIdsOf } from "./lb-certificates";
 
@@ -34,6 +34,7 @@ export interface LbRow {
   certificates: LbCertInfo[];
   /** Certificatesサービス方式(certificate-ids)のlistener証明書OCID */
   managedCertificateIds: string[];
+  tags: OciTagged;
 }
 
 export interface SubnetRow {
@@ -62,6 +63,10 @@ function listenersOf(record: Record<string, { port?: number; protocol?: string }
   return Object.entries(record ?? {}).map(([name, l]) => ({ name, port: l.port, protocol: l.protocol }));
 }
 
+function tagsOf(resource: OciTagged): OciTagged {
+  return { "defined-tags": resource["defined-tags"], "system-tags": resource["system-tags"] };
+}
+
 function lbRowOfNlb(nlb: OciNetworkLoadBalancerSummary): LbRow {
   const subnetId = nlb["subnet-id"];
   return {
@@ -77,6 +82,7 @@ function lbRowOfNlb(nlb: OciNetworkLoadBalancerSummary): LbRow {
     backendSetNames: Object.keys(nlb["backend-sets"] ?? {}),
     certificates: [],
     managedCertificateIds: [],
+    tags: tagsOf(nlb),
   };
 }
 
@@ -94,6 +100,7 @@ function lbRowOfLb(lb: OciLoadBalancer): LbRow {
     backendSetNames: Object.keys(lb["backend-sets"] ?? {}),
     certificates: lbCertificateRows(lb),
     managedCertificateIds: managedCertificateIdsOf(lb),
+    tags: tagsOf(lb),
   };
 }
 
@@ -133,11 +140,19 @@ export interface BackendSetsLike {
   [name: string]: { backends?: { "ip-address"?: string }[] } | undefined;
 }
 
+/** バックエンドセット名→そのセットのバックエンドIP(重複はそのまま)。 */
+export function backendSetIpsOf(backendSets: BackendSetsLike | undefined): Map<string, string[]> {
+  return new Map(
+    Object.entries(backendSets ?? {}).map(([name, set]) => [
+      name,
+      (set?.backends ?? []).map((backend) => backend["ip-address"]).filter((ip): ip is string => !!ip),
+    ]),
+  );
+}
+
 /** LB/NLBの全バックエンドセットのバックエンドIP(重複はそのまま)。 */
 export function backendIpsOf(backendSets: BackendSetsLike | undefined): string[] {
-  return Object.values(backendSets ?? {}).flatMap((set) =>
-    (set?.backends ?? []).map((backend) => backend["ip-address"]).filter((ip): ip is string => !!ip),
-  );
+  return [...backendSetIpsOf(backendSets).values()].flat();
 }
 
 interface LbEntry {

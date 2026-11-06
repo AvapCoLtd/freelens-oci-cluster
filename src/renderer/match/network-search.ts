@@ -1,6 +1,7 @@
 import type { ClusterOciData } from "../fetch/fetch";
 import type { OciResult } from "../oci/result";
 import type { OciBackendSetHealthView } from "../oci/types";
+import { clusterTagMismatchesOf, clusterTagMismatchText } from "./cluster-tag";
 import { matchesQuery } from "./filter-rows";
 import { gatewayHealth, isSupportedGatewayId } from "./gateway-status";
 import {
@@ -97,6 +98,7 @@ export interface LbSearchContext {
   nsgs: ClusterOciData["nsgs"];
   managedCerts: ClusterOciData["managedCerts"];
   backendHealthOf: (backendSetName: string) => OciResult<OciBackendSetHealthView> | undefined;
+  clusterId?: string;
 }
 
 function backendSetValues(row: LbRow, ctx: LbSearchContext): SearchValue[] {
@@ -120,7 +122,14 @@ export function lbSearchValues(row: LbRow, ctx: LbSearchContext): SearchValues {
     return [displayNameOrOcid(result, certId, (cert) => cert.name), result?.ok ? result.data.validTo : undefined];
   });
   return {
-    summary: [row.displayName, lbKindLabel(row.kind), ...row.ips, lbVisibilityLabel(row.isPrivate), row.lifecycleState],
+    summary: [
+      row.displayName,
+      ...clusterTagMismatchesOf(row.tags, ctx.clusterId).map(clusterTagMismatchText),
+      lbKindLabel(row.kind),
+      ...row.ips,
+      lbVisibilityLabel(row.isPrivate),
+      row.lifecycleState,
+    ],
     detail: [
       ...row.listeners.map(listenerLabel),
       ...managedCertValues,

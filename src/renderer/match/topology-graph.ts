@@ -1,6 +1,30 @@
 import type { ClusterOciData } from "../fetch/fetch";
 import type { OciResult } from "../oci/result";
-import type { OciBackupPolicyView, OciFssExport, OciSubnet, OciVcn, OciVnic, OciVolume } from "../oci/types";
+import type {
+  OciBackendSetHealthView,
+  OciBackupPolicyView,
+  OciInstance,
+  OciNodePoolSummary,
+  OciSubnet,
+  OciVcn,
+  OciVnic,
+  OciVolume,
+} from "../oci/types";
+import {
+  backendHealthByIp,
+  backendHealthKey,
+  type EdgeHealthLevel,
+  NO_LOCAL_POD_HEALTH,
+  unlistedBackendHealth,
+  worseBackendHealth,
+} from "./backend-health";
+import { ipInCidr } from "./cidr";
+import {
+  CLUSTER_TAG_MISMATCH_LABEL,
+  type ClusterTagMismatch,
+  type ClusterTagSource,
+  clusterTagMismatchesOf,
+} from "./cluster-tag";
 import { buildConsoleUrl, type OciConsoleResourceType } from "./console-url";
 import {
   type GatewayKind,
@@ -12,22 +36,33 @@ import {
 import { placementSummary, shapeSummary, shapeText } from "./instance-shape";
 import { isAbnormalLifecycleState, isAttachedState } from "./lifecycle-state";
 import {
-  backendIpsOf,
+  type EndpointSliceInput,
+  isLocalTrafficPolicy,
+  isNoLocalPod,
+  readyEndpointNodesOf,
+  serviceKey,
+} from "./local-traffic-policy";
+import { pushToMap, pushUniqueToMap } from "./map-list";
+import {
+  backendSetIpsOf,
   buildNetworkView,
   clusterLbIds,
   internalIpsOfNodes,
   type LbRow,
   routeEntityKind,
 } from "./network-path";
+import { nodePoolIdsByInstance, resolveNodePoolId } from "./node-pool";
 import { extractRegionFromOcid } from "./ocid-region";
 import { TOPOLOGY_SECTIONS, type TopologySection } from "./page-sections";
 import { parseProviderId } from "./provider-id";
 import {
   type CsiSource,
-  fileSystemOcidOf,
+  type FssFileSystemRef,
+  fssFileSystemRefOf,
   getCsiSource,
+  isFssExportOcid,
   isOrphanedPvStorage,
-  type PvStorageOrphanKind,
+  type PvStorageOrphan,
   type PvStorageResolution,
   resolvePvStorage,
 } from "./pv-storage";
@@ -35,29 +70,18 @@ import {
   ingressIpsOfServices,
   type LoadBalancerCandidate,
   matchServicesToLoadBalancers,
+  type ServiceLbMatch,
   type ServiceLbMatchInput,
 } from "./service-lb";
-
-/** 描画順・ソートの安定キーを兼ねる種別の並び。 */
-export const TOPOLOGY_NODE_KINDS = [
-  "vcn",
-  "subnet",
-  "subnet-summary",
-  "instance-group",
-  "instance",
-  "lb",
-  "nlb",
-  "gateway",
-  "waf",
-  "k8s-service",
-  "k8s-pv",
-  "volume",
-  "filesystem",
-  "backup-policy",
-  "snapshot-policy",
-] as const;
-
-export type TopologyNodeKind = (typeof TOPOLOGY_NODE_KINDS)[number];
+import { compareNodes, compareText, TOPOLOGY_NODE_KINDS, type TopologyNodeKind } from "./topology-order";
+import {
+  SECURITY_EDGE_KINDS,
+  type SecurityGraphInput,
+  type SecurityPeer,
+  type SecurityRuleSet,
+  securityLinksOf,
+  summarizePorts,
+} from "./topology-security";
 
 export const TOPOLOGY_EDGE_KINDS = [
   "backend",
@@ -68,9 +92,12 @@ export const TOPOLOGY_EDGE_KINDS = [
   "volume-backup",
   "fss-snapshot",
   "route",
+  ...SECURITY_EDGE_KINDS,
 ] as const;
 
 export type TopologyEdgeKind = (typeof TOPOLOGY_EDGE_KINDS)[number];
+
+export type TopologyEdgeHealth = EdgeHealthLevel;
 
 export type TopologyNodeStatus = "ok" | "warning" | "unknown";
 
@@ -105,6 +132,17 @@ export interface TopologyEdge {
   source: string;
   target: string;
   kind: TopologyEdgeKind;
+  /** backendエッジのみ: 対応するbackend set healthの状態(ヘルス未取得はundefined) */
+  health?: TopologyEdgeHealth;
+  /** 種別名の代わりに線へ添える文言。持たないエッジは種別名で描かれる */
+  label?: string;
+}
+
+export interface TopologySecurityStats {
+  /** 集約前: ルール1件 × 相手ノード1件 で数えたリンク数 */
+  links: number;
+  /** 集約後のエッジ数 */
+  edges: number;
 }
 
 /**
@@ -117,10 +155,23 @@ export interface TopologyMissing {
   sections: TopologySection[];
 }
 
+export interface TopologyLocalTrafficStats {
+  /** 判定材料として読めたEndpointSliceの件数 */
+  endpointSlices: number;
+  /** LBに対応づいたServiceのうちexternalTrafficPolicyがLocalの数(namespace/name重複排除) */
+  localServices: number;
+  /** critical/warningからno-local-podへ格下げしたbackendエッジ数 */
+  downgraded: number;
+}
+
 export interface TopologyGraph {
   nodes: TopologyNode[];
   edges: TopologyEdge[];
   missing: TopologyMissing[];
+  /** 通信許可エッジの集約前後の本数 */
+  security?: TopologySecurityStats;
+  /** backendエッジ格下げの成立度合い(不発動時の切り分け用) */
+  localTraffic?: TopologyLocalTrafficStats;
 }
 
 export interface TopologyK8sNode {
@@ -140,15 +191,21 @@ export interface TopologyK8sPv {
   spec: { csi?: CsiSource; capacity?: { storage?: string } };
 }
 
+export type TopologyK8sEndpointSlice = EndpointSliceInput;
+
 export interface TopologyGraphInput {
   data: ClusterOciData;
   nodes?: readonly TopologyK8sNode[];
   services?: readonly TopologyK8sService[];
   persistentVolumes?: readonly TopologyK8sPv[];
+  /** backendエッジの格下げ判定材料。省略・空ならcritical/warningは格下げされない */
+  endpointSlices?: readonly TopologyK8sEndpointSlice[];
   /** 集約ノードを展開して個々のInstanceを出すSubnet OCID */
   expandedSubnetIds?: ReadonlySet<string>;
   /** list自体の失敗などClusterOciDataのエントリからは読めない失敗セクション */
   failedSections?: readonly TopologySection[];
+  /** 省略時は別クラスタを指すタグを判定しない */
+  clusterId?: string;
 }
 
 /** Subnet内Instanceをこの件数より多く抱えると集約ノードへ畳む。 */
@@ -182,6 +239,9 @@ const EDGE_KIND_SECTIONS: Record<TopologyEdgeKind, readonly TopologySection[]> =
   "volume-backup": ["volumes", "volumeBackupPolicies"],
   "fss-snapshot": ["fileSystems", "fssSnapshotPolicies"],
   route: ["subnets", "routeTables", "gateways"],
+  // vcn: CIDRが読めない間は通信許可エッジを出さない(広すぎるsourceを捨てられない)。
+  "sl-allow": ["vcn", "subnets", "securityLists"],
+  "nsg-allow": ["vcn", "taggedResources", "instances", "lbs", "nlbs", "nodePools", "nsgs"],
 };
 
 /** ノードは出るが情報が欠ける種別と、その根拠セクション。 */
@@ -189,105 +249,6 @@ const DETAIL_KIND_SECTIONS: Partial<Record<TopologyNodeKind, readonly TopologySe
   // VNICはInstanceの配置(所属Subnet)とIP表示の根拠。欠けてもInstanceノード自体はinstances listで出る。
   instance: ["vnics"],
 };
-
-const KIND_ORDER = new Map<TopologyNodeKind, number>(TOPOLOGY_NODE_KINDS.map((kind, index) => [kind, index]));
-
-function compareText(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
-
-function compareNodes(a: TopologyNode, b: TopologyNode): number {
-  const byKind = (KIND_ORDER.get(a.kind) ?? 0) - (KIND_ORDER.get(b.kind) ?? 0);
-  return byKind !== 0 ? byKind : compareText(a.id, b.id);
-}
-
-interface ParsedIp {
-  family: 4 | 6;
-  value: bigint;
-}
-
-interface ParsedCidr extends ParsedIp {
-  network: bigint;
-  mask: bigint;
-}
-
-function parseIpv4(text: string): bigint | undefined {
-  const parts = text.split(".");
-  if (parts.length !== 4) return undefined;
-  let value = 0n;
-  for (const part of parts) {
-    if (!/^\d{1,3}$/.test(part)) return undefined;
-    const octet = Number(part);
-    if (octet > 255) return undefined;
-    value = (value << 8n) | BigInt(octet);
-  }
-  return value;
-}
-
-function parseIpv6Groups(part: string): bigint[] | undefined {
-  if (part === "") return [];
-  const tokens = part.split(":");
-  const groups: bigint[] = [];
-  for (const [index, token] of tokens.entries()) {
-    // 末尾のIPv4記法(::ffff:10.0.0.1)は16bit×2として畳む
-    if (token.includes(".")) {
-      if (index !== tokens.length - 1) return undefined;
-      const embedded = parseIpv4(token);
-      if (embedded === undefined) return undefined;
-      groups.push(embedded >> 16n, embedded & 0xffffn);
-      continue;
-    }
-    if (!/^[0-9a-fA-F]{1,4}$/.test(token)) return undefined;
-    groups.push(BigInt(`0x${token}`));
-  }
-  return groups;
-}
-
-function parseIpv6(text: string): bigint | undefined {
-  const halves = text.split("::");
-  if (halves.length > 2) return undefined;
-  const head = parseIpv6Groups(halves[0] ?? "");
-  const tail = halves.length === 2 ? parseIpv6Groups(halves[1] ?? "") : [];
-  if (!head || !tail) return undefined;
-  const total = head.length + tail.length;
-  if (halves.length === 2 ? total > 7 : total !== 8) return undefined;
-  const groups = [...head, ...new Array<bigint>(8 - total).fill(0n), ...tail];
-  return groups.reduce((acc, group) => (acc << 16n) | group, 0n);
-}
-
-function parseIp(text: string | undefined | null): ParsedIp | undefined {
-  if (!text) return undefined;
-  const trimmed = text.trim();
-  if (trimmed.includes(":")) {
-    const value = parseIpv6(trimmed);
-    return value === undefined ? undefined : { family: 6, value };
-  }
-  const value = parseIpv4(trimmed);
-  return value === undefined ? undefined : { family: 4, value };
-}
-
-function parseCidr(text: string | undefined | null): ParsedCidr | undefined {
-  if (!text) return undefined;
-  const slash = text.indexOf("/");
-  if (slash < 0) return undefined;
-  const address = parseIp(text.slice(0, slash));
-  const prefixText = text.slice(slash + 1).trim();
-  if (!address || !/^\d{1,3}$/.test(prefixText)) return undefined;
-  const prefix = Number(prefixText);
-  const width = address.family === 4 ? 32 : 128;
-  if (prefix > width) return undefined;
-  const mask = prefix === 0 ? 0n : ((1n << BigInt(prefix)) - 1n) << BigInt(width - prefix);
-  return { ...address, network: address.value & mask, mask };
-}
-
-/** IPがCIDRに含まれるか。アドレスファミリ不一致・不正表記はfalse(例外にしない)。 */
-export function ipInCidr(ip: string | undefined | null, cidr: string | undefined | null): boolean {
-  const address = parseIp(ip);
-  const block = parseCidr(cidr);
-  if (!address || !block || address.family !== block.family) return false;
-  return (address.value & block.mask) === block.network;
-}
 
 function subnetCidrs(subnet: OciSubnet): string[] {
   const cidrs = new Set<string>();
@@ -329,9 +290,36 @@ function statusOf(lifecycleState: string | undefined): TopologyNodeStatus {
   return isAbnormalLifecycleState(lifecycleState) ? "warning" : "ok";
 }
 
+interface ClusterTagView {
+  status: TopologyNodeStatus;
+  detail: TopologyDetail[];
+}
+
+const INSTANCE_CLUSTER_TAG_SOURCES: readonly ClusterTagSource[] = ["system-tag"];
+
+function clusterTagViewOf(
+  lifecycleStatus: TopologyNodeStatus,
+  mismatches: readonly ClusterTagMismatch[],
+): ClusterTagView {
+  return {
+    status: mismatches.length > 0 ? "warning" : lifecycleStatus,
+    detail: mismatches.map((mismatch) => ({
+      label: CLUSTER_TAG_MISMATCH_LABEL[mismatch.source],
+      value: mismatch.clusterId,
+      role: "ocid",
+    })),
+  };
+}
+
 /** 集約ノードに畳んだInstance 1件分の値(表示・検索とも改行区切りの1エントリで持つ)。 */
 function memberDetailValue(member: TopologyNode): string {
   return [...new Set([member.label, ...member.detail.map((row) => row.value)])].join("\n");
+}
+
+/** ノードプールの設定台数。0台のプールも「0」と出すため、未取得(undefined)とだけ書き分ける。 */
+function poolSizeText(pool: OciNodePoolSummary | undefined): string | undefined {
+  const size = pool?.["node-config-details"]?.size;
+  return size === undefined ? undefined : String(size);
 }
 
 /** ラベル2行目。複数の要約を1行へ並べる。 */
@@ -373,7 +361,7 @@ function gatewayConsoleUrlOf(gatewayId: string, vcnParentId: string | undefined)
   return vcnParentId ? consoleUrlOf(GATEWAY_CONSOLE_TYPE[kind], gatewayId, vcnParentId) : undefined;
 }
 
-// 実体なし(resource_not_found)は取得の失敗ではなく孤立PVの観測結果。欠落バナーへ載せない。
+// 実体を確認できなかった参照先(resource_not_found)は取得の失敗ではなく孤立PVの観測結果。欠落バナーへ載せない。
 function isFailed(result: OciResult<unknown> | undefined): boolean {
   return !!result && !result.ok && result.kind !== "loading" && result.kind !== "resource_not_found";
 }
@@ -403,6 +391,8 @@ function failedSectionsOf(data: ClusterOciData, extra: readonly TopologySection[
   mark("vcn", hasFailedEntry(data.vcns));
   mark("subnets", hasFailedEntry(data.subnets));
   mark("routeTables", hasFailedEntry(data.routeTables));
+  mark("securityLists", hasFailedEntry(data.securityLists));
+  mark("nsgs", hasFailedEntry(data.nsgs));
   mark("gateways", hasFailedEntry(data.gateways));
   for (const section of extra ?? []) failed.add(section);
   return failed;
@@ -467,24 +457,51 @@ function okEntries<T>(record: Record<string, OciResult<T>>): [string, T][] {
 
 const ORPHAN_DETAIL_LABEL = "Status";
 
-// OCIは権限不足と不在に同じ応答を返すため、不在と断定せず両方を読める文言にする。
-const ORPHAN_DETAIL_VALUE: Record<PvStorageOrphanKind, string> = {
-  volume: "Referenced volume not found in OCI or not accessible (orphaned PV)",
-  filesystem: "Referenced file system not found in OCI or not accessible (orphaned PV)",
-  export: "Referenced FSS export not found or not accessible (file system may still exist)",
+// 種別名(topology-flowのEDGE_KIND_LABEL)に推定の印を足した文言。flow側はこのモジュールを読むため参照できない。
+const PV_STORAGE_INFERRED_EDGE_LABEL = "PV → Storage (inferred)";
+
+const ORPHAN_DETAIL_VALUE: Record<PvStorageOrphan["kind"], Record<PvStorageOrphan["certainty"], string>> = {
+  volume: {
+    absent: "Referenced volume does not exist in OCI (orphaned PV)",
+    forbidden: "Referenced volume exists in OCI but is not readable (insufficient permission)",
+    unknown: "Referenced volume not found in OCI or not readable (unconfirmed)",
+  },
+  filesystem: {
+    absent: "Referenced file system does not exist in OCI (orphaned PV)",
+    forbidden: "Referenced file system exists in OCI but is not readable (insufficient permission)",
+    unknown: "Referenced file system not found in OCI or not readable (unconfirmed)",
+  },
+  export: {
+    absent: "Referenced FSS export does not exist (file system may still exist)",
+    forbidden: "Referenced FSS export exists but is not readable (insufficient permission)",
+    unknown: "Referenced FSS export not found or not readable (file system may still exist)",
+  },
 };
 
 /** PVの参照先ストレージのコンソールURL。孤立PVは呼び出し元で除く(実体が無いのでコンソールも404になる)。 */
 function pvStorageConsoleUrlOf(
   resolution: PvStorageResolution,
-  fssExports: Record<string, OciResult<OciFssExport>>,
+  fssRef: FssFileSystemRef | undefined,
 ): string | undefined {
   const ocid = resolution.ocid;
   if (!ocid) return undefined;
   if (resolution.kind === "block_volume") return consoleUrlOf("volume", ocid);
-  if (resolution.kind !== "file_system") return undefined;
-  const fileSystemId = fileSystemOcidOf(ocid, fssExports);
+  const fileSystemId = fssRef?.fileSystemId;
   return fileSystemId ? consoleUrlOf("filesystem", fileSystemId) : undefined;
+}
+
+const FSS_INFERRED_DETAIL: TopologyDetail = {
+  label: "FSS Match",
+  value: "Inferred from volumeHandle OCID (not matched by mount target IP and export path)",
+};
+
+function fssRefDetail(ref: FssFileSystemRef | undefined): TopologyDetail | undefined {
+  if (!ref) return undefined;
+  if (ref.inferred) return FSS_INFERRED_DETAIL;
+  const handleOcid = ref.conflictingHandleOcid;
+  if (!handleOcid) return undefined;
+  const target = isFssExportOcid(handleOcid) ? "a different export" : "a different file system";
+  return { label: "Note", value: `volumeHandle OCID points to ${target} (${handleOcid})` };
 }
 
 /**
@@ -508,6 +525,26 @@ function okEntry<T>(record: Record<string, OciResult<T>>, id: string | undefined
   return result?.ok ? result.data : undefined;
 }
 
+function backendHealthOfLb(
+  row: LbRow,
+  setIps: ReadonlyMap<string, string[]> | undefined,
+  healths: Record<string, OciResult<OciBackendSetHealthView>>,
+): Map<string, TopologyEdgeHealth> {
+  const byIp = new Map<string, TopologyEdgeHealth>();
+  for (const [backendSetName, ips] of setIps ?? []) {
+    const result = healths[backendHealthKey(row.kind, row.id, backendSetName)] as
+      | OciResult<OciBackendSetHealthView>
+      | undefined;
+    if (!result?.ok) continue;
+    const levels = backendHealthByIp(result.data);
+    for (const ip of ips) {
+      const merged = worseBackendHealth(byIp.get(ip), levels.get(ip) ?? unlistedBackendHealth(result.data));
+      if (merged) byIp.set(ip, merged);
+    }
+  }
+  return byIp;
+}
+
 /**
  * Instance OCID→primary VNIC。primaryが1つも取れないInstanceは載らない
  * (secondary VNICのsubnetを配置根拠にすると、実際とは違うSubnetへ置く)。
@@ -524,6 +561,391 @@ function primaryVnicByInstance(data: ClusterOciData): Map<string, OciVnic> {
     if (vnic?.["is-primary"]) byInstance.set(instanceId, vnic);
   }
   return byInstance;
+}
+
+type PutEdge = (
+  kind: TopologyEdgeKind,
+  source: string,
+  target: string,
+  health?: TopologyEdgeHealth,
+) => string | undefined;
+
+interface PvLink {
+  pvNodeId: string;
+  storageNodeId?: string;
+  /** FSSのみ: IP:pathで照合できず、volumeHandle先頭のOCIDから推定した参照 */
+  inferred?: boolean;
+}
+
+interface VolumeLink {
+  instanceId: string;
+  volumeId: string;
+}
+
+interface StorageNodeInput {
+  data: ClusterOciData;
+  clusterId: string | undefined;
+  pvs: readonly TopologyK8sPv[];
+  instances: readonly OciInstance[];
+  putNode: (node: TopologyNode) => void;
+}
+
+interface StorageNodeResult {
+  pvLinks: PvLink[];
+  volumeLinks: VolumeLink[];
+}
+
+/** 返すのは後段でエッジへ変換するリンク候補で、ノード側はputNodeへ流し込む。 */
+function buildStorageNodes(input: StorageNodeInput): StorageNodeResult {
+  const { clusterId, data, instances, putNode, pvs } = input;
+  const volumeById = new Map<string, OciVolume>(
+    (data.volumes.ok ? data.volumes.data : []).map((volume) => [volume.id, volume]),
+  );
+  // Volume一覧に無いOCIDでもノードは作る(attachment経由の参照。名前・容量が無いだけで実体はある)。
+  const putVolumeNode = (volumeId: string) => {
+    const volume = volumeById.get(volumeId);
+    const sizeText = volume?.["size-in-gbs"] === undefined ? undefined : `${volume["size-in-gbs"]} GB`;
+    const tagView = clusterTagViewOf(statusOf(volume?.["lifecycle-state"]), clusterTagMismatchesOf(volume, clusterId));
+    putNode({
+      id: volumeId,
+      kind: "volume",
+      label: volume?.["display-name"] ?? volumeId,
+      summary: sizeText,
+      status: tagView.status,
+      detail: detailOf([
+        text("Name", volume?.["display-name"]),
+        text("OCID", volumeId, "ocid"),
+        text("State", volume?.["lifecycle-state"]),
+        ...tagView.detail,
+        text("Size", sizeText),
+        text("Backup Policy", backupPolicyText(data.volumeBackupPolicies, volumeId)),
+      ]),
+      consoleUrl: consoleUrlOf("volume", volumeId),
+    });
+  };
+
+  const pvLinks: PvLink[] = [];
+  for (const pv of pvs) {
+    const csi = getCsiSource(pv.spec);
+    const resolution = resolvePvStorage(csi?.driver, csi?.volumeHandle);
+    if (resolution.kind === "unsupported" || !resolution.ocid) continue;
+    const pvNodeId = `k8s-pv:${pv.metadata.name}`;
+    const orphaned = isOrphanedPvStorage(resolution, data);
+    const fssRef = resolution.kind === "file_system" ? fssFileSystemRefOf(resolution, data) : undefined;
+    putNode({
+      id: pvNodeId,
+      kind: "k8s-pv",
+      label: pv.metadata.name,
+      status: orphaned ? "warning" : "unknown",
+      detail: detailOf([
+        text("Name", pv.metadata.name),
+        text("Kind", resolution.kind === "block_volume" ? "Block Volume" : "FSS"),
+        orphaned
+          ? { label: ORPHAN_DETAIL_LABEL, value: ORPHAN_DETAIL_VALUE[orphaned.kind][orphaned.certainty] }
+          : undefined,
+        orphaned === false || !orphaned.byMountPath ? fssRefDetail(fssRef) : undefined,
+        text("Volume Handle", csi?.volumeHandle),
+        text("Capacity", pv.spec.capacity?.storage),
+      ]),
+      consoleUrl: orphaned ? undefined : pvStorageConsoleUrlOf(resolution, fssRef),
+    });
+    const ocid = resolution.ocid;
+    if (resolution.kind === "block_volume") {
+      // 実在しないノード宛てのエッジはputEdgeが捨てるため、常に積んでよい
+      // (attachment経由でVolumeノードが生まれた回だけ合流する)。
+      pvLinks.push({ pvNodeId, storageNodeId: ocid });
+      // Volume一覧に無いPV参照は孤立PVの観測結果のため、ここではノードを作らない。
+      if (!volumeById.has(ocid)) continue;
+      putVolumeNode(ocid);
+      const assignment = okEntry(data.volumeBackupPolicies, ocid);
+      const policyId = assignment?.policyId;
+      if (policyId) {
+        putNode({
+          id: policyId,
+          kind: "backup-policy",
+          label: assignment?.policyName ?? policyId,
+          status: "unknown",
+          detail: detailOf([text("Name", assignment?.policyName), text("OCID", policyId, "ocid")]),
+          consoleUrl: consoleUrlOf("volume-backup-policy", policyId),
+        });
+      }
+      continue;
+    }
+    const fileSystemId = fssRef?.fileSystemId;
+    const inferred = fssRef?.inferred ?? false;
+    const fileSystem = fileSystemId ? okEntry(data.fileSystems, fileSystemId) : undefined;
+    if (!fileSystemId || !fileSystem) {
+      pvLinks.push({ pvNodeId, inferred });
+      continue;
+    }
+    const policyId = fileSystem["filesystem-snapshot-policy-id"];
+    const policyName = okEntry(data.fssSnapshotPolicies, policyId)?.policyName;
+    // タグはIP:pathで照合した実体(fileSystemId)のもの。volumeHandle先頭のOCIDが指す側ではない。
+    const fsTagView = clusterTagViewOf(
+      statusOf(fileSystem["lifecycle-state"]),
+      clusterTagMismatchesOf(fileSystem, clusterId),
+    );
+    putNode({
+      id: fileSystemId,
+      kind: "filesystem",
+      label: fileSystem["display-name"] ?? fileSystemId,
+      status: fsTagView.status,
+      detail: detailOf([
+        text("Name", fileSystem["display-name"]),
+        text("OCID", fileSystemId, "ocid"),
+        text("State", fileSystem["lifecycle-state"]),
+        ...fsTagView.detail,
+        text("Snapshot Policy", policyId ? (policyName ?? policyId) : "None"),
+      ]),
+      consoleUrl: consoleUrlOf("filesystem", fileSystemId),
+    });
+    if (policyId) {
+      putNode({
+        id: policyId,
+        kind: "snapshot-policy",
+        label: policyName ?? policyId,
+        status: "unknown",
+        detail: detailOf([text("Name", policyName), text("OCID", policyId, "ocid")]),
+        consoleUrl: consoleUrlOf("fss-snapshot-policy", policyId),
+      });
+    }
+    pvLinks.push({ pvNodeId, storageNodeId: fileSystemId, inferred });
+  }
+
+  const instanceIds = new Set(instances.map((instance) => instance.id));
+  const volumeLinks: VolumeLink[] = [];
+  const seenVolumeLinks = new Set<string>();
+  for (const attachment of (data.volumeAttachments.ok ? data.volumeAttachments.data : [])
+    .slice()
+    .sort((a, b) => compareText(a.id, b.id))) {
+    const instanceId = attachment["instance-id"];
+    const volumeId = attachment["volume-id"];
+    if (!instanceId || !volumeId || !instanceIds.has(instanceId)) continue;
+    if (!isAttachedState(attachment["lifecycle-state"])) continue;
+    const key = `${instanceId}|${volumeId}`;
+    if (seenVolumeLinks.has(key)) continue;
+    seenVolumeLinks.add(key);
+    volumeLinks.push({ instanceId, volumeId });
+    putVolumeNode(volumeId);
+  }
+
+  return { pvLinks, volumeLinks };
+}
+
+interface InstanceGroupInput {
+  shownSubnets: readonly [string, OciSubnet][];
+  expanded: ReadonlySet<string>;
+  instances: readonly OciInstance[];
+  poolById: ReadonlyMap<string, OciNodePoolSummary>;
+  poolIdOf: (instance: OciInstance) => string | undefined;
+  nodeById: Map<string, TopologyNode>;
+}
+
+/** nodeByIdからは畳んだInstanceが消え、代わりに集約ノードが入る。 */
+function aggregateInstanceGroups(input: InstanceGroupInput): Map<string, string> {
+  const { nodeById, poolById, poolIdOf } = input;
+  const putNode = (node: TopologyNode) => {
+    if (!nodeById.has(node.id)) nodeById.set(node.id, node);
+  };
+  const groupOf = new Map<string, string>();
+  for (const [subnetId] of input.shownSubnets) {
+    if (input.expanded.has(subnetId)) continue;
+    const inSubnet = input.instances.filter((instance) => nodeById.get(instance.id)?.parentId === subnetId);
+    if (inSubnet.length <= AGGREGATE_THRESHOLD) continue;
+    // ノードプール不明のInstanceは1つの束にまとめる(空文字キー)。
+    const membersByPool = new Map<string, string[]>();
+    for (const instance of inSubnet) {
+      const key = poolIdOf(instance) ?? "";
+      pushToMap(membersByPool, key, instance.id);
+    }
+    for (const [poolId, memberIds] of [...membersByPool].sort((a, b) => compareText(a[0], b[0]))) {
+      // 1件だけの束は畳まない: 並ぶ箱の数は減らず、Instanceの詳細とコンソールリンクだけが失われる。
+      if (memberIds.length < 2) continue;
+      const members = memberIds.map((memberId) => nodeById.get(memberId)).filter((node) => node !== undefined);
+      for (const memberId of memberIds) nodeById.delete(memberId);
+      const groupId = poolId ? `instance-group:${subnetId}:${poolId}` : `instance-group:${subnetId}`;
+      for (const memberId of memberIds) groupOf.set(memberId, groupId);
+      const pool = poolById.get(poolId);
+      const countLabel = `${memberIds.length} nodes`;
+      putNode({
+        id: groupId,
+        kind: "instance-group",
+        label: pool?.name ? `${pool.name} (${countLabel})` : countLabel,
+        summary: summaryOf([pool?.["node-shape"], pool?.["kubernetes-version"]]),
+        parentId: subnetId,
+        status: "unknown",
+        detail: [
+          ...detailOf([
+            text("Node Pool", pool?.name),
+            text("OCID", poolId, "ocid"),
+            text("Node Shape", pool?.["node-shape"]),
+            text("Kubernetes Version", pool?.["kubernetes-version"]),
+            text("Size", poolSizeText(pool)),
+          ]),
+          { label: "Instances", value: String(memberIds.length) },
+          // 畳んだInstanceの値を持たせない場合、その名前・OCIDで集約ノードを検索できなくなる。
+          ...members.map((member) => ({ label: "Member", value: memberDetailValue(member) })),
+        ],
+        memberIds,
+        count: memberIds.length,
+      });
+    }
+  }
+  return groupOf;
+}
+
+interface BackendEdgeInput {
+  data: ClusterOciData;
+  instances: readonly OciInstance[];
+  instanceIps: ReadonlyMap<string, string[]>;
+  lbRows: readonly LbRow[];
+  serviceLbMatches: readonly ServiceLbMatch[];
+  endpointSlices?: readonly TopologyK8sEndpointSlice[];
+  k8sNodeByInstanceId: ReadonlyMap<string, TopologyK8sNode>;
+  putEdge: PutEdge;
+}
+
+/** 返すのはexternalTrafficPolicy: LocalなServiceのキー(`namespace/name`)集合。 */
+function addBackendEdges(input: BackendEdgeInput): Set<string> {
+  const { data, instanceIps, k8sNodeByInstanceId, lbRows, putEdge } = input;
+  const targetsByIp = new Map<string, string[]>();
+  for (const instance of input.instances) {
+    for (const ip of instanceIps.get(instance.id) ?? []) pushUniqueToMap(targetsByIp, ip, instance.id);
+  }
+  for (const row of lbRows) {
+    for (const ip of row.ips) pushUniqueToMap(targetsByIp, ip, row.id);
+  }
+
+  const backendSetIpsById = new Map<string, Map<string, string[]>>();
+  if (data.lbs.ok) for (const lb of data.lbs.data) backendSetIpsById.set(lb.id, backendSetIpsOf(lb["backend-sets"]));
+  if (data.nlbs.ok) {
+    for (const nlb of data.nlbs.data) backendSetIpsById.set(nlb.id, backendSetIpsOf(nlb["backend-sets"]));
+  }
+  const readyEndpointNodes = readyEndpointNodesOf(input.endpointSlices ?? []);
+  const servicesByLbId = new Map<string, ServiceLbMatchInput[]>();
+  for (const match of input.serviceLbMatches) {
+    const lbId = match.loadBalancer?.ocid;
+    if (!lbId) continue;
+    pushToMap(servicesByLbId, lbId, match.service);
+  }
+  const localServiceKeys = new Set<string>();
+  for (const services of servicesByLbId.values()) {
+    for (const service of services) {
+      if (isLocalTrafficPolicy(service.externalTrafficPolicy)) {
+        localServiceKeys.add(serviceKey(service.namespace, service.name));
+      }
+    }
+  }
+  const edgeHealthOf = (
+    lbId: string,
+    targetId: string,
+    health: TopologyEdgeHealth | undefined,
+  ): TopologyEdgeHealth | undefined => {
+    if (health !== "critical" && health !== "warning") return health;
+    const nodeName = k8sNodeByInstanceId.get(targetId)?.metadata.name;
+    if (!nodeName) return health;
+    return isNoLocalPod(servicesByLbId.get(lbId) ?? [], readyEndpointNodes, nodeName) ? NO_LOCAL_POD_HEALTH : health;
+  };
+  for (const row of lbRows) {
+    const setIps = backendSetIpsById.get(row.id);
+    const healthByIp = backendHealthOfLb(row, setIps, data.backendHealths);
+    const backendIps = [...new Set([...(setIps?.values() ?? [])].flat())].sort(compareText);
+    for (const ip of backendIps) {
+      for (const targetId of [...(targetsByIp.get(ip) ?? [])].sort(compareText)) {
+        putEdge("backend", row.id, targetId, edgeHealthOf(row.id, targetId, healthByIp.get(ip)));
+      }
+    }
+  }
+  return localServiceKeys;
+}
+
+interface SecurityInputParams {
+  data: ClusterOciData;
+  vcnId: string | undefined;
+  shownSubnets: readonly [string, OciSubnet][];
+  instances: readonly OciInstance[];
+  instanceIps: ReadonlyMap<string, string[]>;
+  primaryVnics: ReadonlyMap<string, OciVnic>;
+  poolById: ReadonlyMap<string, OciNodePoolSummary>;
+  poolIdOf: (instance: OciInstance) => string | undefined;
+  lbRows: readonly LbRow[];
+}
+
+function securityGraphInputOf(params: SecurityInputParams): SecurityGraphInput {
+  const { data, instanceIps, poolById, poolIdOf, primaryVnics } = params;
+  const peers: SecurityPeer[] = [];
+  const subnetIngress: SecurityRuleSet[] = [];
+  for (const [subnetId, subnet] of params.shownSubnets) {
+    peers.push({ nodeId: subnetId, cidrs: subnetCidrs(subnet) });
+    const rules = (subnet["security-list-ids"] ?? []).flatMap(
+      (securityListId) => okEntry(data.securityLists, securityListId)?.["ingress-security-rules"] ?? [],
+    );
+    if (rules.length > 0) subnetIngress.push({ nodeId: subnetId, rules });
+  }
+  for (const instance of params.instances) {
+    const vnic = primaryVnics.get(instance.id);
+    const poolId = poolIdOf(instance);
+    peers.push({
+      nodeId: instance.id,
+      nsgIds: (poolId ? poolById.get(poolId)?.["node-config-details"]?.["nsg-ids"] : undefined) ?? [],
+      ips: [
+        ...new Set(
+          [...(instanceIps.get(instance.id) ?? []), vnic?.["private-ip"], vnic?.["public-ip"]].filter(
+            (ip): ip is string => !!ip,
+          ),
+        ),
+      ],
+    });
+  }
+  for (const row of params.lbRows) peers.push({ nodeId: row.id, nsgIds: row.nsgIds, ips: row.ips });
+
+  const nsgIngress: SecurityRuleSet[] = [];
+  for (const peer of peers) {
+    for (const nsgId of peer.nsgIds ?? []) {
+      const rules = (okEntry(data.nsgs, nsgId)?.rules ?? []).filter((rule) => rule.direction !== "EGRESS");
+      if (rules.length > 0) nsgIngress.push({ nodeId: peer.nodeId, nsgId, rules });
+    }
+  }
+
+  const vcn = params.vcnId ? okEntry(data.vcns, params.vcnId) : undefined;
+  return { peers, subnetIngress, nsgIngress, vcnCidrs: vcn ? vcnCidrs(vcn) : [] };
+}
+
+interface SecurityEdgeInput {
+  graphInput: SecurityGraphInput;
+  putEdge: PutEdge;
+  edgeById: Map<string, TopologyEdge>;
+}
+
+function addSecurityEdges(input: SecurityEdgeInput): TopologySecurityStats {
+  const { edgeById, graphInput, putEdge } = input;
+  const portsByEdgeId = new Map<string, string[]>();
+  let links = 0;
+  // VCN CIDRが読めないとVCN全体sourceを広すぎると判定できず、図が完全グラフになる。
+  const securityLinks = graphInput.vcnCidrs.length === 0 ? [] : securityLinksOf(graphInput);
+  for (const link of securityLinks) {
+    links += 1;
+    const id = putEdge(link.kind, link.source, link.target);
+    if (!id) continue;
+    pushToMap(portsByEdgeId, id, link.port);
+  }
+  for (const [id, ports] of portsByEdgeId) {
+    const edge = edgeById.get(id);
+    if (edge) edge.label = summarizePorts(ports);
+  }
+  return { links, edges: portsByEdgeId.size };
+}
+
+function localTrafficStatsOf(
+  endpointSlices: readonly TopologyK8sEndpointSlice[] | undefined,
+  localServiceKeys: ReadonlySet<string>,
+  edges: readonly TopologyEdge[],
+): TopologyLocalTrafficStats {
+  return {
+    endpointSlices: endpointSlices?.length ?? 0,
+    localServices: localServiceKeys.size,
+    downgraded: edges.filter((edge) => edge.health === NO_LOCAL_POD_HEALTH).length,
+  };
 }
 
 /**
@@ -609,6 +1031,8 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
   const lbRows = [...view.lbRows].sort((a, b) => compareText(a.id, b.id));
   const placeLb = (row: LbRow): string | undefined =>
     row.subnetIds.filter((subnetId) => subnetById.has(subnetId)).sort(compareText)[0];
+  const candidates: LoadBalancerCandidate[] = lbRows.map((row) => ({ ocid: row.id, kind: row.kind, ips: row.ips }));
+  const serviceLbMatches = matchServicesToLoadBalancers(serviceInputs, candidates);
   const lbParent = new Map<string, string>();
   for (const row of lbRows) {
     const placed = placeLb(row);
@@ -656,21 +1080,33 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
     });
   }
 
+  const poolById = new Map((data.nodePools.ok ? data.nodePools.data : []).map((pool) => [pool.id, pool]));
+  const poolIdByInstance = nodePoolIdsByInstance(data.nodePoolDetails);
+  const poolIdOf = (instance: OciInstance): string | undefined => resolveNodePoolId(instance, poolIdByInstance);
+
   for (const instance of instances) {
     const k8sNode = k8sNodeByInstanceId.get(instance.id);
     const vnic = primaryVnics.get(instance.id);
+    const poolId = poolIdOf(instance);
+    // InstanceのCreatedByはノードプールを指すため、system tagだけを見る。
+    const tagView = clusterTagViewOf(
+      statusOf(instance["lifecycle-state"]),
+      clusterTagMismatchesOf(instance, input.clusterId, INSTANCE_CLUSTER_TAG_SOURCES),
+    );
     putNode({
       id: instance.id,
       kind: "instance",
       label: instance["display-name"] ?? instance.id,
       summary: summaryOf([shapeSummary(instance), placementSummary(instance)]),
       parentId: instanceParent.get(instance.id),
-      status: statusOf(instance["lifecycle-state"]),
+      status: tagView.status,
       detail: detailOf([
         text("Name", instance["display-name"]),
         text("OCID", instance.id, "ocid"),
         text("State", instance["lifecycle-state"]),
+        ...tagView.detail,
         text("Shape", shapeText(instance)),
+        text("Node Pool", poolId ? (poolById.get(poolId)?.name ?? poolId) : undefined),
         text("Private IP", vnic?.["private-ip"]),
         text("Public IP", vnic?.["public-ip"] ?? undefined),
         text("Node", k8sNode?.metadata.name),
@@ -681,16 +1117,18 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
   }
 
   for (const row of lbRows) {
+    const tagView = clusterTagViewOf(statusOf(row.lifecycleState), clusterTagMismatchesOf(row.tags, input.clusterId));
     putNode({
       id: row.id,
       kind: row.kind,
       label: row.displayName ?? row.id,
       parentId: lbParent.get(row.id),
-      status: statusOf(row.lifecycleState),
+      status: tagView.status,
       detail: detailOf([
         text("Name", row.displayName),
         text("OCID", row.id, "ocid"),
         text("State", row.lifecycleState),
+        ...tagView.detail,
         list("IP Addresses", row.ips),
         list("Subnets", row.subnetIds),
         list("NSGs", row.nsgIds),
@@ -758,201 +1196,65 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
     });
   }
 
-  const volumeById = new Map<string, OciVolume>(
-    (data.volumes.ok ? data.volumes.data : []).map((volume) => [volume.id, volume]),
-  );
-  // Volume一覧に無いOCIDでもノードは作る(attachment経由の参照。名前・容量が無いだけで実体はある)。
-  const putVolumeNode = (volumeId: string) => {
-    const volume = volumeById.get(volumeId);
-    const sizeText = volume?.["size-in-gbs"] === undefined ? undefined : `${volume["size-in-gbs"]} GB`;
-    putNode({
-      id: volumeId,
-      kind: "volume",
-      label: volume?.["display-name"] ?? volumeId,
-      summary: sizeText,
-      status: statusOf(volume?.["lifecycle-state"]),
-      detail: detailOf([
-        text("Name", volume?.["display-name"]),
-        text("OCID", volumeId, "ocid"),
-        text("State", volume?.["lifecycle-state"]),
-        text("Size", sizeText),
-        text("Backup Policy", backupPolicyText(data.volumeBackupPolicies, volumeId)),
-      ]),
-      consoleUrl: consoleUrlOf("volume", volumeId),
-    });
-  };
+  const { pvLinks, volumeLinks } = buildStorageNodes({ data, clusterId: input.clusterId, pvs, instances, putNode });
 
-  interface PvLink {
-    pvNodeId: string;
-    storageNodeId?: string;
-  }
-  const pvLinks: PvLink[] = [];
-  for (const pv of pvs) {
-    const csi = getCsiSource(pv.spec);
-    const resolution = resolvePvStorage(csi?.driver, csi?.volumeHandle);
-    if (resolution.kind === "unsupported" || !resolution.ocid) continue;
-    const pvNodeId = `k8s-pv:${pv.metadata.name}`;
-    const orphaned = isOrphanedPvStorage(resolution, data);
-    putNode({
-      id: pvNodeId,
-      kind: "k8s-pv",
-      label: pv.metadata.name,
-      status: orphaned ? "warning" : "unknown",
-      detail: detailOf([
-        text("Name", pv.metadata.name),
-        text("Kind", resolution.kind === "block_volume" ? "Block Volume" : "FSS"),
-        orphaned ? { label: ORPHAN_DETAIL_LABEL, value: ORPHAN_DETAIL_VALUE[orphaned] } : undefined,
-        text("Volume Handle", csi?.volumeHandle),
-        text("Capacity", pv.spec.capacity?.storage),
-      ]),
-      consoleUrl: orphaned ? undefined : pvStorageConsoleUrlOf(resolution, data.fssExports),
-    });
-    const ocid = resolution.ocid;
-    if (resolution.kind === "block_volume") {
-      // 実在しないノード宛てのエッジはputEdgeが捨てるため、常に積んでよい
-      // (attachment経由でVolumeノードが生まれた回だけ合流する)。
-      pvLinks.push({ pvNodeId, storageNodeId: ocid });
-      // Volume一覧に無いPV参照は孤立PVの観測結果のため、ここではノードを作らない。
-      if (!volumeById.has(ocid)) continue;
-      putVolumeNode(ocid);
-      const assignment = okEntry(data.volumeBackupPolicies, ocid);
-      const policyId = assignment?.policyId;
-      if (policyId) {
-        putNode({
-          id: policyId,
-          kind: "backup-policy",
-          label: assignment?.policyName ?? policyId,
-          status: "unknown",
-          detail: detailOf([text("Name", assignment?.policyName), text("OCID", policyId, "ocid")]),
-          consoleUrl: consoleUrlOf("volume-backup-policy", policyId),
-        });
-      }
-      continue;
-    }
-    // volumeHandleがExport OCIDのPVはexport応答経由でしかFileSystem OCIDに辿り着けない。
-    const fileSystemId = fileSystemOcidOf(ocid, data.fssExports);
-    const fileSystem = fileSystemId ? okEntry(data.fileSystems, fileSystemId) : undefined;
-    if (!fileSystemId || !fileSystem) {
-      pvLinks.push({ pvNodeId });
-      continue;
-    }
-    const policyId = fileSystem["filesystem-snapshot-policy-id"];
-    const policyName = okEntry(data.fssSnapshotPolicies, policyId)?.policyName;
-    putNode({
-      id: fileSystemId,
-      kind: "filesystem",
-      label: fileSystem["display-name"] ?? fileSystemId,
-      status: statusOf(fileSystem["lifecycle-state"]),
-      detail: detailOf([
-        text("Name", fileSystem["display-name"]),
-        text("OCID", fileSystemId, "ocid"),
-        text("State", fileSystem["lifecycle-state"]),
-        text("Snapshot Policy", policyId ? (policyName ?? policyId) : "None"),
-      ]),
-      consoleUrl: consoleUrlOf("filesystem", fileSystemId),
-    });
-    if (policyId) {
-      putNode({
-        id: policyId,
-        kind: "snapshot-policy",
-        label: policyName ?? policyId,
-        status: "unknown",
-        detail: detailOf([text("Name", policyName), text("OCID", policyId, "ocid")]),
-        consoleUrl: consoleUrlOf("fss-snapshot-policy", policyId),
-      });
-    }
-    pvLinks.push({ pvNodeId, storageNodeId: fileSystemId });
-  }
-
-  const instanceIds = new Set(instances.map((instance) => instance.id));
-  const volumeLinks: { instanceId: string; volumeId: string }[] = [];
-  const seenVolumeLinks = new Set<string>();
-  for (const attachment of (data.volumeAttachments.ok ? data.volumeAttachments.data : [])
-    .slice()
-    .sort((a, b) => compareText(a.id, b.id))) {
-    const instanceId = attachment["instance-id"];
-    const volumeId = attachment["volume-id"];
-    if (!instanceId || !volumeId || !instanceIds.has(instanceId)) continue;
-    if (!isAttachedState(attachment["lifecycle-state"])) continue;
-    const key = `${instanceId}|${volumeId}`;
-    if (seenVolumeLinks.has(key)) continue;
-    seenVolumeLinks.add(key);
-    volumeLinks.push({ instanceId, volumeId });
-    putVolumeNode(volumeId);
-  }
-
-  const groupOf = new Map<string, string>();
-  for (const [subnetId] of shownSubnets) {
-    if (expanded.has(subnetId)) continue;
-    const memberIds = instances
-      .filter((instance) => nodeById.get(instance.id)?.parentId === subnetId)
-      .map((instance) => instance.id);
-    if (memberIds.length <= AGGREGATE_THRESHOLD) continue;
-    const members = memberIds.map((memberId) => nodeById.get(memberId)).filter((node) => node !== undefined);
-    for (const memberId of memberIds) nodeById.delete(memberId);
-    const groupId = `instance-group:${subnetId}`;
-    for (const memberId of memberIds) groupOf.set(memberId, groupId);
-    putNode({
-      id: groupId,
-      kind: "instance-group",
-      label: `${memberIds.length} nodes`,
-      parentId: subnetId,
-      status: "unknown",
-      detail: [
-        { label: "Instances", value: String(memberIds.length) },
-        // 畳んだInstanceの値を持たせない場合、その名前・OCIDで集約ノードを検索できなくなる。
-        ...members.map((member) => ({ label: "Member", value: memberDetailValue(member) })),
-      ],
-      memberIds,
-      count: memberIds.length,
-    });
-  }
+  const groupOf = aggregateInstanceGroups({
+    shownSubnets,
+    expanded,
+    instances,
+    poolById,
+    poolIdOf,
+    nodeById,
+  });
 
   const edgeById = new Map<string, TopologyEdge>();
-  const putEdge = (kind: TopologyEdgeKind, source: string, target: string) => {
+  /** 図に載せられたエッジのid。両端が図に無い・自己ループで捨てた場合はundefined。 */
+  const putEdge = (
+    kind: TopologyEdgeKind,
+    source: string,
+    target: string,
+    health?: TopologyEdgeHealth,
+  ): string | undefined => {
     const from = groupOf.get(source) ?? source;
     const to = groupOf.get(target) ?? target;
-    if (from === to || !nodeById.has(from) || !nodeById.has(to)) return;
+    if (from === to || !nodeById.has(from) || !nodeById.has(to)) return undefined;
     const id = `${kind}|${from}|${to}`;
-    if (!edgeById.has(id)) edgeById.set(id, { id, source: from, target: to, kind });
+    const existing = edgeById.get(id);
+    if (existing) {
+      // 集約ノードへ畳んだInstanceや複数IPのバックエンドが1本へ合流するため、最も深刻な状態を残す。
+      const merged = worseBackendHealth(existing.health, health);
+      if (merged !== undefined) existing.health = merged;
+      return id;
+    }
+    const edge: TopologyEdge = { id, source: from, target: to, kind };
+    if (health !== undefined) edge.health = health;
+    edgeById.set(id, edge);
+    return id;
   };
 
-  const targetsByIp = new Map<string, string[]>();
-  const addTarget = (ip: string, nodeId: string) => {
-    const targets = targetsByIp.get(ip);
-    if (targets) {
-      if (!targets.includes(nodeId)) targets.push(nodeId);
-      return;
-    }
-    targetsByIp.set(ip, [nodeId]);
-  };
-  for (const instance of instances) {
-    for (const ip of instanceIps.get(instance.id) ?? []) addTarget(ip, instance.id);
-  }
-  for (const row of lbRows) {
-    for (const ip of row.ips) addTarget(ip, row.id);
-  }
-
-  const backendIpsById = new Map<string, string[]>();
-  if (data.lbs.ok) for (const lb of data.lbs.data) backendIpsById.set(lb.id, backendIpsOf(lb["backend-sets"]));
-  if (data.nlbs.ok) for (const nlb of data.nlbs.data) backendIpsById.set(nlb.id, backendIpsOf(nlb["backend-sets"]));
-  for (const row of lbRows) {
-    const backendIps = [...new Set(backendIpsById.get(row.id) ?? [])].sort(compareText);
-    for (const ip of backendIps) {
-      for (const targetId of [...(targetsByIp.get(ip) ?? [])].sort(compareText)) putEdge("backend", row.id, targetId);
-    }
-  }
+  const localServiceKeys = addBackendEdges({
+    data,
+    instances,
+    instanceIps,
+    lbRows,
+    serviceLbMatches,
+    endpointSlices: input.endpointSlices,
+    k8sNodeByInstanceId,
+    putEdge,
+  });
 
   for (const waf of view.wafRows) putEdge("waf-lb", waf.id, waf.targetLbId);
 
-  const candidates: LoadBalancerCandidate[] = lbRows.map((row) => ({ ocid: row.id, kind: row.kind, ips: row.ips }));
-  for (const match of matchServicesToLoadBalancers(serviceInputs, candidates)) {
+  for (const match of serviceLbMatches) {
     if (!match.loadBalancer) continue;
     putEdge("service-lb", `k8s-service:${match.service.namespace}/${match.service.name}`, match.loadBalancer.ocid);
   }
 
   for (const link of pvLinks) {
-    if (link.storageNodeId) putEdge("pv-storage", link.pvNodeId, link.storageNodeId);
+    if (!link.storageNodeId) continue;
+    const id = putEdge("pv-storage", link.pvNodeId, link.storageNodeId);
+    const edge = id && link.inferred ? edgeById.get(id) : undefined;
+    if (edge) edge.label = PV_STORAGE_INFERRED_EDGE_LABEL;
   }
   for (const link of volumeLinks) putEdge("attachment", link.instanceId, link.volumeId);
   for (const node of [...nodeById.values()].sort(compareNodes)) {
@@ -975,9 +1277,28 @@ export function buildTopologyGraph(input: TopologyGraphInput): TopologyGraph {
     }
   }
 
+  const security = addSecurityEdges({
+    graphInput: securityGraphInputOf({
+      data,
+      vcnId,
+      shownSubnets,
+      instances,
+      instanceIps,
+      primaryVnics,
+      poolById,
+      poolIdOf,
+      lbRows,
+    }),
+    putEdge,
+    edgeById,
+  });
+
+  const edges = [...edgeById.values()].sort((a, b) => compareText(a.id, b.id));
   return {
     nodes: [...nodeById.values()].sort(compareNodes),
-    edges: [...edgeById.values()].sort((a, b) => compareText(a.id, b.id)),
+    edges,
     missing: missingOf(failedSectionsOf(data, input.failedSections)),
+    security,
+    localTraffic: localTrafficStatsOf(input.endpointSlices, localServiceKeys, edges),
   };
 }

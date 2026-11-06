@@ -6,7 +6,9 @@ export function OciPvStoragePage() {
   return (
     <OciPageShell
       page="pv-storage"
-      renderLoaded={(data, region, _clusterKey, search) => <PvStorageTab data={data} region={region} search={search} />}
+      renderLoaded={(data, region, _clusterKey, search, clusterId) => (
+        <PvStorageTab data={data} region={region} search={search} clusterId={clusterId} />
+      )}
     />
   );
 }
