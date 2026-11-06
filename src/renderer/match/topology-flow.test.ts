@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { EDGE_KIND_COLOR, EDGE_KIND_LABEL, missingKindLabel, toTopologyFlow, UNPLACED_LABEL } from "./topology-flow";
+import { EDGE_HEALTH_LEVELS } from "./backend-health";
 import {
-  TOPOLOGY_EDGE_KINDS,
-  type TopologyEdge,
-  type TopologyGraph,
-  type TopologyNode,
-  type TopologyNodeKind,
-} from "./topology-graph";
+  EDGE_HEALTH_COLOR,
+  EDGE_HEALTH_LABEL,
+  EDGE_KIND_COLOR,
+  EDGE_KIND_DASH,
+  EDGE_KIND_LABEL,
+  edgeDashOf,
+  missingKindLabel,
+  toTopologyFlow,
+  UNPLACED_LABEL,
+} from "./topology-flow";
+import { TOPOLOGY_EDGE_KINDS, type TopologyEdge, type TopologyGraph, type TopologyNode } from "./topology-graph";
 import { layoutTopology, UNPLACED_REGION_ID } from "./topology-layout";
+import type { TopologyNodeKind } from "./topology-order";
 
 const VCN = "ocid1.vcn.oc1.ap-tokyo-1.vcn1";
 const SUBNET = "ocid1.subnet.oc1.ap-tokyo-1.a";
@@ -32,6 +38,28 @@ describe("凡例の網羅", () => {
     const colors = TOPOLOGY_EDGE_KINDS.map((kind) => EDGE_KIND_COLOR[kind]);
     for (const kind of TOPOLOGY_EDGE_KINDS) expect(EDGE_KIND_LABEL[kind]).toBeTruthy();
     expect(new Set(colors).size).toBe(TOPOLOGY_EDGE_KINDS.length);
+  });
+
+  it("全ヘルス状態がラベルと色を持ち、色は種別色とも重複しない", () => {
+    for (const health of EDGE_HEALTH_LEVELS) expect(EDGE_HEALTH_LABEL[health]).toBeTruthy();
+    const colors = [
+      ...TOPOLOGY_EDGE_KINDS.map((kind) => EDGE_KIND_COLOR[kind]),
+      ...EDGE_HEALTH_LEVELS.map((health) => EDGE_HEALTH_COLOR[health]),
+    ];
+    expect(new Set(colors).size).toBe(colors.length);
+  });
+});
+
+describe("edgeDashOf", () => {
+  it("healthの破線が種別の破線より優先される", () => {
+    expect(edgeDashOf({ kind: "backend", health: "no-local-pod" })).toBe("5 4");
+    expect(edgeDashOf({ kind: "route", health: "no-local-pod" })).toBe("5 4");
+  });
+
+  it("破線を持たないhealthは種別の指定へ落ちる", () => {
+    expect(edgeDashOf({ kind: "route", health: "critical" })).toBe(EDGE_KIND_DASH.route);
+    expect(edgeDashOf({ kind: "backend", health: "critical" })).toBeUndefined();
+    expect(edgeDashOf({ kind: "backend", health: undefined })).toBeUndefined();
   });
 });
 
@@ -127,6 +155,20 @@ describe("toTopologyFlow", () => {
       label: "Subnet → Gateway",
       color: EDGE_KIND_COLOR.route,
     });
+  });
+
+  it("healthを持つbackendエッジは種別色でなくヘルス色で塗る", () => {
+    const graph = graphOf(
+      [node(VCN, "vcn"), node(SUBNET, "subnet", VCN), node(INSTANCE, "instance", SUBNET), node(STRAY_LB, "lb")],
+      [
+        { id: "backend|lb|i", source: STRAY_LB, target: INSTANCE, kind: "backend", health: "critical" },
+        { id: "backend|i|lb", source: INSTANCE, target: STRAY_LB, kind: "backend" },
+      ],
+    );
+    const byId = new Map(flowOf(graph).edges.map((edge) => [edge.id, edge]));
+    expect(byId.get("backend|lb|i")).toMatchObject({ health: "critical", color: EDGE_HEALTH_COLOR.critical });
+    expect(byId.get("backend|i|lb")?.color).toBe(EDGE_KIND_COLOR.backend);
+    expect(byId.get("backend|i|lb")?.health).toBeUndefined();
   });
 
   it("エッジの経路は両端の箱の辺から始まり辺で終わる直交折れ線になる", () => {

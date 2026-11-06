@@ -1,4 +1,5 @@
-import type { OciInstance, OciNodePoolSummary } from "../oci/types";
+import type { OciResult } from "../oci/result";
+import type { OciInstance, OciNodePool, OciNodePoolSummary } from "../oci/types";
 
 const NODEPOOL_OCID_PREFIX = "ocid1.nodepool.";
 
@@ -19,4 +20,21 @@ export function nodePoolNameOfInstance(
   const poolId = nodePoolIdOfInstance(instance);
   if (!poolId) return undefined;
   return pools.find((pool) => pool.id === poolId)?.name;
+}
+
+export function nodePoolIdsByInstance(
+  details: Record<string, OciResult<OciNodePool>> | undefined,
+): Map<string, string> {
+  const byInstance = new Map<string, string>();
+  for (const [poolId, result] of Object.entries(details ?? {})) {
+    if (!result.ok) continue;
+    for (const node of result.data.nodes ?? []) {
+      if (node.id) byInstance.set(node.id, poolId);
+    }
+  }
+  return byInstance;
+}
+
+export function resolveNodePoolId(instance: OciInstance, byInstance: ReadonlyMap<string, string>): string | undefined {
+  return byInstance.get(instance.id) ?? nodePoolIdOfInstance(instance);
 }

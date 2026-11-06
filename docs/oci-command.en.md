@@ -23,18 +23,21 @@ The [command definitions](../src/renderer/cli/command-defs.ts) are the single so
 
 ### Output and exit status
 
-- The extension adds `--output json` to every call. Stdout must use the same `{"data": …}` format as `oci`.
+- The extension adds `--output json` to every call.
+  Stdout must use the same `{"data": …}` format as `oci`.
 - It adds `--all` to list operations.
 - It pages `search resource structured-search`, which has no `--all`, with `--page` and follows the top-level `opc-next-page`.
 - Manual paging stops after 100 pages and fails only the affected section.
 - Exit status 0 is success, even when the command writes to stderr.
-- A non-zero status is a failure. The extension classifies authentication, permission or not-found, and other errors from the `ServiceError:` JSON on stderr.
+- A non-zero status is a failure.
+  The extension classifies authentication, permission or not-found, and other errors from the `ServiceError:` JSON on stderr.
 
 ### Execution limits
 
 - Each call times out after 60 seconds.
 - At most eight processes run concurrently.
-- Stdout is limited to 64MiB per call. Exceeding the limit fails only the affected section.
+- Stdout is limited to 64MiB per call.
+  Exceeding the limit fails only the affected section.
 
 The contract assumes stdout and stderr contain no secrets.
 Error displays include the exit status and stderr verbatim.

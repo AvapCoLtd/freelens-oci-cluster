@@ -1,4 +1,6 @@
-import { TOPOLOGY_NODE_KINDS, type TopologyEdge, type TopologyNode, type TopologyNodeKind } from "./topology-graph";
+import { pushToMap, pushUniqueToMap } from "./map-list";
+import type { TopologyEdge, TopologyNode } from "./topology-graph";
+import { compareNodes, compareText, type TopologyNodeKind } from "./topology-order";
 
 export interface TopologyPoint {
   x: number;
@@ -106,18 +108,6 @@ const MIN_BAND_WIDTH = 560;
 
 const MIN_CONTENT: TopologySize = { width: 168, height: 40 };
 const MAX_COLUMNS = 4;
-
-const KIND_ORDER = new Map<TopologyNodeKind, number>(TOPOLOGY_NODE_KINDS.map((kind, index) => [kind, index]));
-
-function compareText(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
-
-function compareNodes(a: TopologyNode, b: TopologyNode): number {
-  const byKind = (KIND_ORDER.get(a.kind) ?? 0) - (KIND_ORDER.get(b.kind) ?? 0);
-  return byKind !== 0 ? byKind : compareText(a.id, b.id);
-}
 
 interface Box {
   id: string;
@@ -252,7 +242,7 @@ function storageChains(members: readonly TopologyNode[], edges: readonly Topolog
   const nextOf = new Map<string, string[]>();
   for (const edge of edges) {
     if (!rank.has(edge.source) || !rank.has(edge.target) || edge.source === edge.target) continue;
-    addTo(nextOf, edge.source, edge.target);
+    pushUniqueToMap(nextOf, edge.source, edge.target);
   }
   for (const list of nextOf.values()) {
     list.sort((a, b) => (rank.get(a) as number) - (rank.get(b) as number));
@@ -274,15 +264,6 @@ function storageChains(members: readonly TopologyNode[], edges: readonly Topolog
   return chains;
 }
 
-function addTo(map: Map<string, string[]>, key: string, value: string): void {
-  const list = map.get(key);
-  if (list) {
-    if (!list.includes(value)) list.push(value);
-    return;
-  }
-  map.set(key, [value]);
-}
-
 /**
  * VCN直下でSubnetを積む段の判定。上から順にトラフィックが降りる並びで、
  * 先頭から見て最初に真になった段に置く(どれも真にならなければ残りの段)。
@@ -302,9 +283,7 @@ export function layoutTopology(nodes: readonly TopologyNode[], edges: readonly T
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const childrenOf = new Map<string, TopologyNode[]>();
   const addChild = (parentId: string, node: TopologyNode) => {
-    const siblings = childrenOf.get(parentId);
-    if (siblings) siblings.push(node);
-    else childrenOf.set(parentId, [node]);
+    pushToMap(childrenOf, parentId, node);
   };
   const roots: TopologyNode[] = [];
   for (const node of [...nodes].sort(compareNodes)) {

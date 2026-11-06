@@ -26,9 +26,11 @@ const DRG_ID = "ocid1.drg.oc1.ap-tokyo-1.aaaaexample0001";
 const LB_ID = "ocid1.loadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const NLB_ID = "ocid1.networkloadbalancer.oc1.ap-tokyo-1.aaaaexample0001";
 const VNIC_ID = "ocid1.vnic.oc1.ap-tokyo-1.aaaaexample0001";
+const PRIVATE_IP_ID = "ocid1.privateip.oc1.ap-tokyo-1.aaaaexample0001";
+const OTHER_VOLUME_ID = "ocid1.volume.oc1.ap-tokyo-1.aaaaexample0002";
 const QUERY_TEXT = `query all resources where (definedTags.namespace = 'Oracle-Tags' && definedTags.key = 'CreatedBy' && definedTags.value = '${CLUSTER_ID}')`;
 
-/** フィクスチャREADMEの対応表(全47コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
+/** フィクスチャREADMEの対応表(全51コマンド)。`id`はfetch.ts / anchor.tsのコメント番号。 */
 const CASES: { id: string; key: OciCommandName; actual: string[]; expected: string[] }[] = [
   {
     id: "1a",
@@ -347,6 +349,48 @@ const CASES: { id: string; key: OciCommandName; actual: string[]; expected: stri
     actual: ociCommands.volumeAttachmentList.args({ compartmentId: COMPARTMENT_ID }),
     expected: ["compute", "volume-attachment", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
   },
+  {
+    id: "36",
+    key: "mountTargetList",
+    actual: ociCommands.mountTargetList.args({
+      compartmentId: COMPARTMENT_ID,
+      availabilityDomain: AVAILABILITY_DOMAIN,
+    }),
+    expected: [
+      "fs",
+      "mount-target",
+      "list",
+      "--compartment-id",
+      COMPARTMENT_ID,
+      "--availability-domain",
+      AVAILABILITY_DOMAIN,
+      "--all",
+    ],
+  },
+  {
+    id: "37",
+    key: "privateIpGet",
+    actual: ociCommands.privateIpGet.args({ privateIpId: PRIVATE_IP_ID }),
+    expected: ["network", "private-ip", "get", "--private-ip-id", PRIVATE_IP_ID],
+  },
+  {
+    id: "38",
+    key: "fssExportList",
+    actual: ociCommands.fssExportList.args({ compartmentId: COMPARTMENT_ID }),
+    expected: ["fs", "export", "list", "--compartment-id", COMPARTMENT_ID, "--all"],
+  },
+  {
+    id: "39",
+    key: "resourceSearchByIds",
+    actual: ociCommands.resourceSearchByIds.args({ resourceIds: [VOLUME_ID, OTHER_VOLUME_ID] }),
+    expected: [
+      "search",
+      "resource",
+      "structured-search",
+      "--query-text",
+      `query all resources where identifier = '${VOLUME_ID}' || identifier = '${OTHER_VOLUME_ID}'`,
+    ],
+  },
 ];
 
 describe("ociCommands", () => {
@@ -354,18 +398,19 @@ describe("ociCommands", () => {
     expect(actual).toEqual(expected);
   });
 
-  it("定義表はSDK呼び出し全47件を網羅し、余分な定義を持たない", () => {
-    expect(CASES).toHaveLength(47);
+  it("定義表はSDK呼び出し全51件を網羅し、余分な定義を持たない", () => {
+    expect(CASES).toHaveLength(51);
     expect(new Set(CASES.map((testCase) => testCase.key))).toEqual(new Set(Object.keys(ociCommands)));
-    expect(Object.keys(ociCommands)).toHaveLength(47);
+    expect(Object.keys(ociCommands)).toHaveLength(51);
   });
 
   it("手動ページングはsearchのみ(他はCLI側の--allで全件取得)", () => {
     const manual = Object.entries(ociCommands)
       .filter(([, def]) => def.manualPaging)
       .map(([key]) => key);
-    expect(manual).toEqual(["taggedResourceSearch"]);
+    expect(manual).toEqual(["taggedResourceSearch", "resourceSearchByIds"]);
     expect(ociCommands.taggedResourceSearch.args({ queryText: QUERY_TEXT })).not.toContain("--all");
+    expect(ociCommands.resourceSearchByIds.args({ resourceIds: [VOLUME_ID] })).not.toContain("--all");
   });
 
   it("複数件を返すコマンドはcollection、単体getはsingle", () => {
@@ -378,6 +423,7 @@ describe("ociCommands", () => {
         "vnicAttachmentList",
         "volumeAttachmentList",
         "taggedResourceSearch",
+        "resourceSearchByIds",
         "nlbList",
         "lbList",
         "volumeList",
@@ -398,6 +444,8 @@ describe("ociCommands", () => {
         "availabilityDomainList",
         "fssSnapshotPolicyList",
         "volumeBackupPolicyList",
+        "mountTargetList",
+        "fssExportList",
       ]),
     );
   });

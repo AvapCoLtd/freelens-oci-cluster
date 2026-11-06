@@ -2,6 +2,8 @@ import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import * as React from "react";
 import type { ClusterOciData } from "../fetch/fetch";
+import { backendHealthKey } from "../match/backend-health";
+import { clusterTagMismatchesOf } from "../match/cluster-tag";
 import { collectHostnames, type DnsMatchKind, matchDnsToLbs } from "../match/dns-check";
 import { findZoneForHost } from "../match/dns-zone-match";
 import { filterRows } from "../match/filter-rows";
@@ -42,7 +44,8 @@ import { entriesReady, sectionsReady } from "../match/section-ready";
 import { ingressIpsOfServices } from "../match/service-lb";
 import { wafDefaultAction, wafPolicyRuleRows } from "../match/waf-policy";
 import { isPending, type OciResult } from "../oci/result";
-import { backendHealthKey, ociClusterStore } from "../store/oci-cluster-store";
+import { ociClusterStore } from "../store/oci-cluster-store";
+import { ClusterTagNotes } from "./cluster-tag-notes";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -85,6 +88,7 @@ interface SectionContext {
   data: ClusterOciData;
   region: string | undefined;
   clusterKey: string;
+  clusterId: string;
   query: string;
 }
 
@@ -322,6 +326,7 @@ function lbValuesOf(ctx: SectionContext, lb: LbRow): SearchValues {
     nsgs: ctx.data.nsgs,
     managedCerts: ctx.data.managedCerts,
     backendHealthOf: (name) => ctx.data.backendHealths[backendHealthKey(lb.kind, lb.id, name)],
+    clusterId: ctx.clusterId,
   });
 }
 
@@ -391,7 +396,10 @@ function LbSection({ ctx, lbRows }: { ctx: SectionContext; lbRows: LbRow[] }) {
                 renderDetail={() => <LbDetail ctx={ctx} lb={lb} />}
                 cells={
                   <>
-                    <td style={TD_STYLE}>{lb.displayName ?? "-"}</td>
+                    <td style={TD_STYLE}>
+                      {lb.displayName ?? "-"}
+                      <ClusterTagNotes mismatches={clusterTagMismatchesOf(lb.tags, ctx.clusterId)} />
+                    </td>
                     <td style={TD_STYLE}>{lbKindLabel(lb.kind)}</td>
                     <td style={TD_STYLE}>{lb.ips.join(", ") || "-"}</td>
                     <td style={TD_STYLE}>{lbVisibilityLabel(lb.isPrivate)}</td>
@@ -769,12 +777,19 @@ export interface NetworkTabProps {
   region: string | undefined;
   clusterKey: string;
   search: SearchState;
+  clusterId: string;
 }
 
 /** 経路軸(外→内)のセクション重ね: WAF → LB/NLB → LBサブネット → ノードサブネット → endpoint。 */
-export const NetworkTab = observer(function NetworkTab({ data, region, clusterKey, search }: NetworkTabProps) {
+export const NetworkTab = observer(function NetworkTab({
+  data,
+  region,
+  clusterKey,
+  search,
+  clusterId,
+}: NetworkTabProps) {
   const { query, setQuery } = search;
-  const ctx: SectionContext = { data, region, clusterKey, query };
+  const ctx: SectionContext = { data, region, clusterKey, clusterId, query };
   // compartment内の全LBではなくクラスタ関連LBのみ表示する(タグ + Service IP + バックエンド連鎖)
   const lbIds = clusterLbIds(
     data,

@@ -17,7 +17,7 @@ export function TopologyMermaidCopyButton({ graph, meta }: { graph?: TopologyGra
       small
       disabled={!graph}
       onClick={() => {
-        if (graph) copy(toMermaid(graph, meta));
+        if (graph) copy(toMermaid(graph, meta), TOOLTIP.idle);
       }}
     />
   );

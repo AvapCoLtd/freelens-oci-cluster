@@ -6,7 +6,9 @@ export function OciServiceLbPage() {
   return (
     <OciPageShell
       page="service-lb"
-      renderLoaded={(data, region, _clusterKey, search) => <ServiceLbTab data={data} region={region} search={search} />}
+      renderLoaded={(data, region, _clusterKey, search, clusterId) => (
+        <ServiceLbTab data={data} region={region} search={search} clusterId={clusterId} />
+      )}
     />
   );
 }

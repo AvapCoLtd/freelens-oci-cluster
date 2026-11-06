@@ -8,8 +8,16 @@
 /** タグ系フィールド。名前空間名・タグキーはOracleや利用者が付けた表記がそのまま出る。 */
 export type OciDefinedTags = Record<string, Record<string, unknown>>;
 
+/** システムタグ。Oracleが付ける名前空間(`orcl-containerengine`等)だけが出る。形はdefined tagsと同じ。 */
+export type OciSystemTags = Record<string, Record<string, unknown>>;
+
+export interface OciTagged {
+  "defined-tags"?: OciDefinedTags;
+  "system-tags"?: OciSystemTags;
+}
+
 /** `compute instance get` / `compute instance list` → 01a, 03 */
-export interface OciInstance {
+export interface OciInstance extends OciTagged {
   id: string;
   "display-name"?: string;
   shape?: string;
@@ -20,7 +28,6 @@ export interface OciInstance {
   "availability-domain"?: string;
   "fault-domain"?: string;
   "lifecycle-state"?: string;
-  "defined-tags"?: OciDefinedTags;
 }
 
 /** `compute vnic-attachment list`(フィクスチャ未採取。形はAPI仕様からの推測) */
@@ -51,10 +58,20 @@ export interface OciVnic {
   "is-primary"?: boolean;
 }
 
-/** `ce node-pool get` → 01b(アンカー解決が読む2フィールドのみ) */
+/** `ce node-pool get`の`nodes[]`要素 → 01b。`id`はNodeそのものではなくCompute InstanceのOCID。 */
+export interface OciNodePoolNode {
+  id: string;
+  name?: string;
+  "lifecycle-state"?: string;
+  "private-ip"?: string;
+}
+
+/** `ce node-pool get` → 01b */
 export interface OciNodePool {
   "cluster-id"?: string;
   "compartment-id"?: string;
+  /** 削除済みノード(lifecycle-state=DELETED)も残ったまま返る */
+  nodes?: OciNodePoolNode[];
 }
 
 /** `ce node-pool list` → 09 */
@@ -86,7 +103,7 @@ export interface OciCluster {
 }
 
 /** `bv volume list` → 07、`bv volume get` → 31 */
-export interface OciVolume {
+export interface OciVolume extends OciTagged {
   id: string;
   "display-name"?: string;
   "lifecycle-state"?: string;
@@ -94,7 +111,7 @@ export interface OciVolume {
 }
 
 /** `fs file-system get` → 08 */
-export interface OciFileSystem {
+export interface OciFileSystem extends OciTagged {
   "display-name"?: string;
   "lifecycle-state"?: string;
   "filesystem-snapshot-policy-id"?: string;
@@ -105,10 +122,35 @@ export interface OciFssExport {
   "file-system-id"?: string;
 }
 
-/** `search resource structured-search` → 04 */
+/** `fs export list`(フィクスチャ未採取。キーは2026-10-02に実機の応答で確認) */
+export interface OciFssExportSummary {
+  id: string;
+  "export-set-id"?: string;
+  "file-system-id"?: string;
+  path?: string;
+  "lifecycle-state"?: string;
+}
+
+/** `fs mount-target list`(フィクスチャ未採取。キーは2026-10-02に実機の応答で確認)。IPアドレス自体は持たない */
+export interface OciMountTarget {
+  id: string;
+  "export-set-id"?: string;
+  "private-ip-ids"?: string[];
+  "lifecycle-state"?: string;
+}
+
+/** `network private-ip get`(フィクスチャ未採取。キーは2026-10-02に実機の応答で確認) */
+export interface OciPrivateIp {
+  id: string;
+  "ip-address"?: string;
+}
+
+/** `search resource structured-search` → 04, 39 */
 export interface OciResourceSummary {
   identifier?: string;
   "compartment-id"?: string;
+  "resource-type"?: string;
+  "lifecycle-state"?: string;
 }
 
 /** `network vcn get` → 29 */
@@ -202,7 +244,7 @@ interface OciLbBackendSet {
 }
 
 /** `lb load-balancer list` → 06、`06-…-with-ssl`(listenerのssl-configuration) */
-export interface OciLoadBalancer {
+export interface OciLoadBalancer extends OciTagged {
   id: string;
   "display-name"?: string;
   "lifecycle-state"?: string;
@@ -229,7 +271,7 @@ export interface OciLoadBalancer {
 }
 
 /** `nlb network-load-balancer list` → 05 */
-export interface OciNetworkLoadBalancerSummary {
+export interface OciNetworkLoadBalancerSummary extends OciTagged {
   id: string;
   "display-name"?: string;
   "lifecycle-state"?: string;
@@ -366,6 +408,21 @@ export type OciAnyGateway = OciBlockingGateway & Partial<OciInternetGateway> & P
 export interface OciBackupPolicyView {
   policyId?: string;
   policyName?: string;
+}
+
+/** FSSのmount target IP + export path → FileSystemの対応1件(mount target / export / private IPの3応答を突合した形)。 */
+export interface OciFssMountEntry {
+  ipAddress: string;
+  path: string;
+  exportId: string;
+  fileSystemId: string;
+}
+
+/** FSSのIP:path照合の材料。exportを持たないmount targetもIPだけは載せ、export不在の確定に使う。 */
+export interface OciFssMountIndex {
+  entries: OciFssMountEntry[];
+  /** 稼働中のmount targetが持つIPアドレス(exportの有無を問わない) */
+  mountTargetIps: string[];
 }
 
 /** CertificatesサービスのLB listener証明書(certificate-ids方式)の期限表示用。 */

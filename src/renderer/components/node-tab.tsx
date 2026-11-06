@@ -1,6 +1,7 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type { ClusterOciData } from "../fetch/fetch";
+import { type ClusterTagMismatch, clusterTagMismatchesOf, clusterTagMismatchText } from "../match/cluster-tag";
 import { filterRows } from "../match/filter-rows";
 import { ocpuMemoryText } from "../match/instance-shape";
 import { nodePoolNameOfInstance } from "../match/node-pool";
@@ -8,6 +9,7 @@ import { parseProviderId } from "../match/provider-id";
 import { sectionsReady } from "../match/section-ready";
 import { sortRows } from "../match/sort-rows";
 import type { OciInstance } from "../oci/types";
+import { ClusterTagNotes } from "./cluster-tag-notes";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -37,6 +39,8 @@ interface NodeRow {
   instance: OciInstance | undefined;
   poolName: string | undefined;
   ready: boolean;
+  /** Instanceのsystem tagが現クラスタとは別のクラスタを指す(CreatedByはノードプールを指すため見ない) */
+  tagMismatches: ClusterTagMismatch[];
 }
 
 const SORT_VALUE: Record<NodeColumn, (row: NodeRow) => string | number | undefined> = {
@@ -56,6 +60,7 @@ function searchValuesOf(row: NodeRow): (string | number | undefined)[] {
   return [
     row.node.getName(),
     row.instance?.["display-name"],
+    ...row.tagMismatches.map(clusterTagMismatchText),
     row.poolName,
     row.instance?.shape,
     ocpuMemoryText(row.instance),
@@ -68,9 +73,10 @@ export interface NodeTabProps {
   data: ClusterOciData;
   region: string | undefined;
   search: SearchState;
+  clusterId: string;
 }
 
-export const NodeTab = observer(function NodeTab({ data, region, search }: NodeTabProps) {
+export const NodeTab = observer(function NodeTab({ data, region, search, clusterId }: NodeTabProps) {
   const nodeStore = Renderer.K8sApi.nodesStore;
   const instancesResult = data.instances;
   const instances = instancesResult.ok ? instancesResult.data : [];
@@ -96,6 +102,7 @@ export const NodeTab = observer(function NodeTab({ data, region, search }: NodeT
       instance,
       poolName: nodePoolNameOfInstance(nodePools, instance),
       ready: isNodeReady(node),
+      tagMismatches: clusterTagMismatchesOf(instance, clusterId, ["system-tag"]),
     };
   });
   const filteredRows = filterRows(rows, query, searchValuesOf);
@@ -141,10 +148,13 @@ export const NodeTab = observer(function NodeTab({ data, region, search }: NodeT
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map(({ key, node, instance, poolName, ready }) => (
+            {sortedRows.map(({ key, node, instance, poolName, ready, tagMismatches }) => (
               <tr key={key}>
                 <td style={TD_STYLE}>{node.getName()}</td>
-                <td style={TD_STYLE}>{instance?.["display-name"] ?? "-"}</td>
+                <td style={TD_STYLE}>
+                  {instance?.["display-name"] ?? "-"}
+                  <ClusterTagNotes mismatches={tagMismatches} />
+                </td>
                 <td style={TD_STYLE}>{poolName ?? "-"}</td>
                 <td style={TD_STYLE}>{instance?.shape ?? "-"}</td>
                 <td style={TD_STYLE}>{ocpuMemoryText(instance) ?? "-"}</td>

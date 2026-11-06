@@ -11,6 +11,7 @@ import {
   fetchDnsZones,
   fetchFileSystem,
   fetchFssExport,
+  fetchFssMountEntries,
   fetchFssSnapshotPolicies,
   fetchFssSnapshotPolicyName,
   fetchGatewayStatus,
@@ -18,8 +19,10 @@ import {
   fetchLbs,
   fetchManagedCertificate,
   fetchNlbs,
+  fetchNodePool,
   fetchNodePools,
   fetchNsgWithRules,
+  fetchResourceSearches,
   fetchRouteTable,
   fetchSecurityList,
   fetchSubnet,
@@ -40,6 +43,7 @@ import {
   fetchWafs,
   policyNameIndex,
 } from "../fetch/fetch";
+import { backendHealthKey } from "../match/backend-health";
 import { collectHostnames } from "../match/dns-check";
 import { gatewayIdsOfRouteTables, type OciGatewayStatusView } from "../match/gateway-status";
 import { managedCertificateIdsOf } from "../match/lb-certificates";
@@ -50,10 +54,11 @@ import { sectionsForPage, TOPOLOGY_SECTIONS } from "../match/page-sections";
 import { parseProviderId, pickAnchorInstanceId } from "../match/provider-id";
 import {
   distinctBlockVolumeOcids,
-  distinctFssRefOcids,
-  fileSystemOcidsOf,
+  existenceProbeOcids,
+  fallbackFssExportOcids,
+  fssFileSystemIdsOf,
   getCsiSource,
-  isFssExportOcid,
+  needsFssMountEntries,
   resolvePvStorage,
   unstartedOcids,
 } from "../match/pv-storage";
@@ -68,10 +73,12 @@ import type {
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
   OciFssExport,
+  OciFssMountIndex,
   OciInstance,
   OciLoadBalancer,
   OciManagedCertView,
   OciNetworkLoadBalancerSummary,
+  OciNodePool,
   OciNodePoolSummary,
   OciNsg,
   OciNsgWithRules,
@@ -166,7 +173,9 @@ type OcidMapKey =
   | "managedCerts"
   | "volumeBackupPolicies"
   | "fssSnapshotPolicies"
-  | "backendHealths";
+  | "resourceSearches"
+  | "backendHealths"
+  | "nodePoolDetails";
 
 interface ClusterCache {
   anchor: AnchorState;
@@ -179,6 +188,7 @@ interface ClusterCache {
   volumes: SectionState<OciVolume[]>;
   volumeAttachments: SectionState<OciVolumeAttachment[]>;
   nodePools: SectionState<OciNodePoolSummary[]>;
+  nodePoolDetails: Map<string, SectionState<OciNodePool>>;
   wafs: SectionState<OciWafSummary[]>;
   dnsZones: SectionState<OciDnsZone[]>;
   // 表示には出さない索引セクション(per-OCID getの置き換え元)。
@@ -187,6 +197,7 @@ interface ClusterCache {
   volumeBackupPolicyList: SectionState<OciVolumeBackupPolicy[]>;
   fileSystems: Map<string, SectionState<OciFileSystem>>;
   fssExports: Map<string, SectionState<OciFssExport>>;
+  fssMountEntries: SectionState<OciFssMountIndex>;
   fileSystemsReconciled: boolean;
   vcns: Map<string, SectionState<OciVcn>>;
   vcnsReconciled: boolean;
@@ -202,12 +213,21 @@ interface ClusterCache {
   managedCerts: Map<string, SectionState<OciManagedCertView>>;
   volumeBackupPolicies: Map<string, SectionState<OciBackupPolicyView>>;
   fssSnapshotPolicies: Map<string, SectionState<OciBackupPolicyView>>;
+  // PVの参照先のうち自身のgetが404だったOCIDのSearch結果。失敗しても不在・権限不足が不明になるだけで、
+  // セクションの失敗には数えない(settledの待ち条件にだけ入る)。
+  resourceSearches: Map<string, SectionState<OciResourceSummary | null>>;
   backendHealths: Map<string, SectionState<OciBackendSetHealthView>>;
+  // backendHealthsはtopologyページの一括取得と共有する。
+  // オンデマンド要求分だけをnetworkページの周期更新の対象にするため、要求されたキーをここに残す。
+  requestedBackendHealths: Set<string>;
   networkReconciled: boolean;
   reconcileOutcomes: ReadonlyMap<ReconcileOutcomeKey, OciResult<unknown>>;
   // Serviceはnamespaced resourceのためloadAll()既定(=トップバー選択中のnamespaceのみ)だと
   // フィルタ外のLoadBalancer Serviceが読めない。service-lbページ用に全namespace指定でloadAll済みか。
   serviceNamespacesLoaded: boolean;
+  // EndpointSliceもnamespaced resourceで、subscribe()はloadAll済みでないと監視を始めない。
+  // topologyページ用に全namespace指定でloadAll済みか。
+  endpointSliceNamespacesLoaded: boolean;
   requestedPages: Set<OciPage>;
 }
 
@@ -223,6 +243,7 @@ function createIdleCache(): ClusterCache {
     volumes: { status: "idle" },
     volumeAttachments: { status: "idle" },
     nodePools: { status: "idle" },
+    nodePoolDetails: new Map(),
     wafs: { status: "idle" },
     dnsZones: { status: "idle" },
     availabilityDomains: { status: "idle" },
@@ -230,6 +251,7 @@ function createIdleCache(): ClusterCache {
     volumeBackupPolicyList: { status: "idle" },
     fileSystems: new Map(),
     fssExports: new Map(),
+    fssMountEntries: { status: "idle" },
     fileSystemsReconciled: false,
     vcns: new Map(),
     vcnsReconciled: false,
@@ -245,10 +267,13 @@ function createIdleCache(): ClusterCache {
     managedCerts: new Map(),
     volumeBackupPolicies: new Map(),
     fssSnapshotPolicies: new Map(),
+    resourceSearches: new Map(),
     backendHealths: new Map(),
+    requestedBackendHealths: new Set(),
     networkReconciled: false,
     reconcileOutcomes: new Map(),
     serviceNamespacesLoaded: false,
+    endpointSliceNamespacesLoaded: false,
     requestedPages: new Set(),
   };
 }
@@ -274,6 +299,27 @@ const EMPTY_VCN_NETWORK: VcnNetwork = {
 
 /** K8s Node集合の変化をVNIC再取得へ流すまでの待ち時間。 */
 const NODE_CHANGE_DEBOUNCE_MS = 2000;
+
+/** 1 backend setにつきociプロセスが1つ起動するため、LB台数×セット数をそのまま並列にはしない。 */
+const BACKEND_HEALTH_CONCURRENCY = 4;
+
+/** backend healthと同じ理由で、プール数をそのまま並列にはしない。 */
+const NODE_POOL_DETAIL_CONCURRENCY = 4;
+
+/** 同時実行数を絞って全件を流す。結果は入力順で返す。 */
+async function mapWithLimit<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await run(items[index] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 const NOT_REQUESTED_MESSAGE = "section not requested for this page";
 const LOADING_MESSAGE = "section is still being fetched";
@@ -311,11 +357,6 @@ function prunedMap<T>(map: ReadonlyMap<string, T>, ids: readonly string[]): Map<
   return entries.length === map.size ? undefined : new Map(entries);
 }
 
-/** backendHealths Mapのキー(UI側のRecord参照と共有)。 */
-export function backendHealthKey(kind: "lb" | "nlb", lbId: string, backendSetName: string): string {
-  return `${kind}:${lbId}:${backendSetName}`;
-}
-
 function sectionStatus(section: SectionState<unknown>): TopologySectionStatus {
   if (section.status !== "ready") return "loading";
   return section.result.ok ? "ok" : "failed";
@@ -329,11 +370,19 @@ function sameClusterOciData(a: ClusterOciData, b: ClusterOciData): boolean {
   return (Object.keys(a) as (keyof ClusterOciData)[]).every((key) => a[key] === b[key]);
 }
 
+// placeholderは共有の1件にする。呼ぶたびに作ると、未取得のままのセクションをsameClusterOciDataが変化と見て世代が進む。
+const LOADING_PLACEHOLDER: OciResult<never> = { ok: false, kind: "loading", raw: { message: LOADING_MESSAGE } };
+const NOT_REQUESTED_PLACEHOLDER: OciResult<never> = {
+  ok: false,
+  kind: "not_requested",
+  raw: { message: NOT_REQUESTED_MESSAGE },
+};
+
 function sectionResultOrPlaceholder<T>(section: SectionState<T>): OciResult<T> {
   if (section.status === "ready") return section.result;
   // 取得開始済み(loading)はページが要求したセクション。idleは他ページ専用で、このページでは叩かない。
-  if (section.status === "loading") return { ok: false, kind: "loading", raw: { message: LOADING_MESSAGE } };
-  return { ok: false, kind: "not_requested", raw: { message: NOT_REQUESTED_MESSAGE } };
+  if (section.status === "loading") return LOADING_PLACEHOLDER;
+  return NOT_REQUESTED_PLACEHOLDER;
 }
 
 /**
@@ -464,12 +513,19 @@ export class OciClusterStore {
         outcomes.delete("fileSystems");
         patch.fileSystems = new Map();
         patch.fssExports = new Map();
+        patch.fssMountEntries = { status: "idle" };
         patch.fileSystemsReconciled = false;
         patch.volumeBackupPolicies = new Map();
         patch.fssSnapshotPolicies = new Map();
+        patch.resourceSearches = new Map();
         patch.availabilityDomains = { status: "idle" };
         patch.fssSnapshotPolicyList = { status: "idle" };
         patch.volumeBackupPolicyList = { status: "idle" };
+        continue;
+      }
+      if (key === "nodePools") {
+        patch.nodePools = { status: "idle" };
+        patch.nodePoolDetails = new Map();
         continue;
       }
       if (key === "network") {
@@ -482,6 +538,7 @@ export class OciClusterStore {
         patch.dnsChecks = new Map();
         patch.managedCerts = new Map();
         patch.backendHealths = new Map();
+        patch.requestedBackendHealths = new Set();
         patch.dnsZones = { status: "idle" };
         patch.networkReconciled = false;
         for (const listSection of VCN_LIST_SECTIONS) outcomes.delete(listSection);
@@ -497,7 +554,7 @@ export class OciClusterStore {
 
   /**
    * ポーリング用: ページのセクションを旧データ表示のまま裏で再取得する(force=stale-while-revalidate)。
-   * anchor再解決はしない。backend healthは既存エントリの再取得のみ(展開したものだけを更新する)。
+   * anchor再解決はしない。backend healthはnetworkページがオンデマンド要求した分だけを再取得する。
    * 戻り値はPOLLING_STOP_ERROR_KINDSに該当した種別(検出時のみ)で、呼び出し元がポーリング自動停止に使う。
    */
   pollRefresh(clusterKey: string, page: OciPage, refreshVnicBodies = false): Promise<OciErrorKind | undefined> {
@@ -546,21 +603,28 @@ export class OciClusterStore {
     }
     if (sections.includes("network")) {
       jobs.push(this.reconcileNetwork(clusterKey, clusterId, compartmentId, true));
-      // backendHealthsは展開時オンデマンドのため図に出さないtopologyページでは再取得しない。
+      // backendHealthsはtopologyページの一括取得と共有するキャッシュのため、キー全件は対象にしない。
+      // networkページで展開・先行取得したぶんだけを取り直す。
       if (page === "network") {
-        for (const key of cache.backendHealths.keys()) {
-          const [kind, lbId, ...nameParts] = key.split(":");
-          jobs.push(
-            this.ensureMapValue(
+        const keys = [...cache.requestedBackendHealths].filter((key) => cache.backendHealths.has(key));
+        jobs.push(
+          mapWithLimit(keys, BACKEND_HEALTH_CONCURRENCY, (key) => {
+            const [kind, lbId, ...nameParts] = key.split(":");
+            return this.ensureMapValue(
               clusterKey,
               "backendHealths",
               key,
               () => fetchBackendSetHealth(kind as "lb" | "nlb", lbId, nameParts.join(":"), this.ociCliCommand),
               true,
-            ),
-          );
-        }
+            ) as Promise<OciResult<unknown>>;
+          }),
+        );
       }
+    }
+    // topologyページは図がヘルスを色で出すため、backend setの増減ごと索引を取り直す(list起点のreconcileと同じ扱い)。
+    if (page === "topology") {
+      jobs.push(this.reconcileBackendHealths(clusterKey, clusterId, compartmentId, true));
+      jobs.push(this.reconcileNodePoolDetails(clusterKey, clusterId, compartmentId, true));
     }
     const results = (await Promise.all(jobs)).flat();
     if (page === "topology") this.captureTopologySnapshot(clusterKey, epoch);
@@ -568,9 +632,132 @@ export class OciClusterStore {
     return stopError && !stopError.ok ? stopError.kind : undefined;
   }
 
+  /** 個別の失敗はここで握って記録するだけにする: 図はヘルス無しのエッジを既定色で描ける。 */
+  private reconcileBackendHealths(
+    clusterKey: string,
+    clusterId: string,
+    compartmentId: string,
+    force = false,
+  ): Promise<OciResult<unknown>[]> {
+    const epoch = this.epochOf(clusterKey);
+    return (async () => {
+      try {
+        const [taggedResources, nlbs, lbs] = await Promise.all([
+          this.ensureTaggedResources(clusterKey, clusterId, force),
+          this.ensureNlbs(clusterKey, compartmentId, clusterId, force),
+          this.ensureLbs(clusterKey, compartmentId, clusterId, force),
+          this.ensureServiceNamespaces(clusterKey),
+        ]);
+        const lbIds = clusterLbIds(
+          { taggedResources, nlbs, lbs },
+          ingressIpsOfServices(Renderer.K8sApi.serviceStore.items),
+          internalIpsOfNodes(Renderer.K8sApi.nodesStore.items),
+        );
+        const targets: { kind: "lb" | "nlb"; lbId: string; backendSetName: string }[] = [];
+        const collect = (kind: "lb" | "nlb", id: string, backendSets: Record<string, unknown> | undefined) => {
+          if (!lbIds.has(id)) return;
+          for (const backendSetName of Object.keys(backendSets ?? {})) targets.push({ kind, lbId: id, backendSetName });
+        };
+        if (nlbs.ok) for (const nlb of nlbs.data) collect("nlb", nlb.id, nlb["backend-sets"]);
+        if (lbs.ok) for (const lb of lbs.data) collect("lb", lb.id, lb["backend-sets"]);
+        const results = await mapWithLimit(targets, BACKEND_HEALTH_CONCURRENCY, async (target) => {
+          const result = await this.ensureMapValue(
+            clusterKey,
+            "backendHealths",
+            backendHealthKey(target.kind, target.lbId, target.backendSetName),
+            () => fetchBackendSetHealth(target.kind, target.lbId, target.backendSetName, this.ociCliCommand),
+            force,
+          );
+          if (!result.ok) {
+            console.warn("[freelens-oci-cluster] backend set health fetch failed", {
+              kind: target.kind,
+              loadBalancerId: target.lbId,
+              backendSetName: target.backendSetName,
+              errorKind: result.kind,
+              message: result.raw.message,
+            });
+          }
+          return result as OciResult<unknown>;
+        });
+        if (this.epochOf(clusterKey) === epoch && nlbs.ok && lbs.ok) {
+          // 列挙元が失敗した回の空集合は「backend set無し」ではなく「不明」のため、刈り込みはlist成功時だけ行う。
+          const pruned = prunedMap(
+            this.getCache(clusterKey).backendHealths,
+            targets.map((target) => backendHealthKey(target.kind, target.lbId, target.backendSetName)),
+          );
+          if (pruned) this.updateCache(clusterKey, { backendHealths: pruned });
+        }
+        return results;
+      } catch (error) {
+        const failure: OciResult<unknown> = { ok: false, kind: "internal", raw: { message: String(error) } };
+        return [failure];
+      }
+    })();
+  }
+
+  /** 個別の失敗はここで握って記録するだけにする: そのプールの分だけ集約がプール無しへ落ちる。 */
+  private reconcileNodePoolDetails(
+    clusterKey: string,
+    clusterId: string,
+    compartmentId: string,
+    force = false,
+  ): Promise<OciResult<unknown>[]> {
+    const epoch = this.epochOf(clusterKey);
+    return (async () => {
+      try {
+        const nodePools = await this.ensureNodePools(clusterKey, clusterId, compartmentId, force);
+        const poolIds = nodePools.ok ? nodePools.data.map((pool) => pool.id) : [];
+        const results = await mapWithLimit(poolIds, NODE_POOL_DETAIL_CONCURRENCY, async (poolId) => {
+          const result = await this.ensureMapValue(
+            clusterKey,
+            "nodePoolDetails",
+            poolId,
+            () => fetchNodePool(poolId, this.ociCliCommand),
+            force,
+          );
+          if (!result.ok) {
+            console.warn("[freelens-oci-cluster] node pool fetch failed", {
+              nodePoolId: poolId,
+              errorKind: result.kind,
+              message: result.raw.message,
+            });
+          }
+          return result as OciResult<unknown>;
+        });
+        const currentNodePools = this.getCache(clusterKey).nodePools;
+        // mobxの observable.map は格納時に値を包み直すため、object参照の比較(===)は常に一致しない。
+        // 一覧の内容一致で「並行する別のreconcileが新しい一覧を書いた後ではないか」を判定する。
+        const currentPoolIds =
+          currentNodePools.status === "ready" && currentNodePools.result.ok
+            ? currentNodePools.result.data.map((pool) => pool.id)
+            : undefined;
+        const isLatestNodePools =
+          currentPoolIds !== undefined &&
+          currentPoolIds.length === poolIds.length &&
+          currentPoolIds.every((id, index) => id === poolIds[index]);
+        if (this.epochOf(clusterKey) === epoch && nodePools.ok && isLatestNodePools) {
+          // 列挙元が失敗した回の空集合は「プール無し」ではなく「不明」のため、刈り込みはlist成功時だけ行う。
+          // 同じ一覧を持つ回だけ刈り込む: 並行するreconcileが新しい一覧で書いたエントリを古い一覧で消さないため。
+          const pruned = prunedMap(this.getCache(clusterKey).nodePoolDetails, poolIds);
+          if (pruned) this.updateCache(clusterKey, { nodePoolDetails: pruned });
+        }
+        return results;
+      } catch (error) {
+        const failure: OciResult<unknown> = { ok: false, kind: "internal", raw: { message: String(error) } };
+        return [failure];
+      }
+    })();
+  }
+
   /** backend health(展開時オンデマンド)の取得開始。キーは kind:lbId:backendSetName。 */
   ensureBackendHealth(clusterKey: string, kind: "lb" | "nlb", lbId: string, backendSetName: string): void {
     const id = backendHealthKey(kind, lbId, backendSetName);
+    const cache = this.getCache(clusterKey);
+    if (!cache.requestedBackendHealths.has(id)) {
+      const requestedBackendHealths = new Set(cache.requestedBackendHealths);
+      requestedBackendHealths.add(id);
+      this.updateCache(clusterKey, { requestedBackendHealths });
+    }
     void this.ensureMapValue(clusterKey, "backendHealths", id, () =>
       fetchBackendSetHealth(kind, lbId, backendSetName, this.ociCliCommand),
     );
@@ -749,6 +936,7 @@ export class OciClusterStore {
       cache.fileSystems,
       cache.volumeBackupPolicies,
       cache.fssSnapshotPolicies,
+      cache.resourceSearches,
     ]);
   }
 
@@ -787,10 +975,12 @@ export class OciClusterStore {
         continue;
       }
       if (key === "fileSystems") {
+        if (cache.fssMountEntries.status === "ready") timestamps.push(cache.fssMountEntries.fetchedAt);
         pushMap(cache.fssExports);
         pushMap(cache.fileSystems);
         pushMap(cache.volumeBackupPolicies);
         pushMap(cache.fssSnapshotPolicies);
+        pushMap(cache.resourceSearches);
         continue;
       }
       if (key === "network") {
@@ -843,9 +1033,11 @@ export class OciClusterStore {
       volumes: sectionResultOrPlaceholder(cache.volumes),
       volumeAttachments: sectionResultOrPlaceholder(cache.volumeAttachments),
       nodePools: sectionResultOrPlaceholder(cache.nodePools),
+      nodePoolDetails: this.toRecord(cache.nodePoolDetails),
       wafs: sectionResultOrPlaceholder(cache.wafs),
       fileSystems: this.toRecord(cache.fileSystems),
       fssExports: this.toRecord(cache.fssExports),
+      fssMountEntries: sectionResultOrPlaceholder(cache.fssMountEntries),
       vcns: this.toRecord(cache.vcns),
       subnets: this.toRecord(cache.subnets),
       securityLists: this.toRecord(cache.securityLists),
@@ -858,6 +1050,7 @@ export class OciClusterStore {
       managedCerts: this.toRecord(cache.managedCerts),
       volumeBackupPolicies: this.toRecord(cache.volumeBackupPolicies),
       fssSnapshotPolicies: this.toRecord(cache.fssSnapshotPolicies),
+      resourceSearches: this.toRecord(cache.resourceSearches),
       backendHealths: this.toRecord(cache.backendHealths),
     };
   }
@@ -962,12 +1155,21 @@ export class OciClusterStore {
     // Serviceを読むページは、トップバーのnamespace絞り込みに関係なく全namespaceを載せる必要がある。
     if (page === "service-lb" || page === "topology") jobs.push(this.ensureServiceNamespaces(clusterKey));
     if (page === "topology") {
+      // backendエッジの格下げ判定材料。jobsへ入れない: 揃わなくても図は格下げが起きないだけで成立する。
+      void this.ensureEndpointSliceNamespaces(clusterKey);
       const epoch = this.epochOf(clusterKey);
       this.watchClusterNodes(clusterKey, compartmentId);
       // 進行中のforceサイクルの完了も待つ: 待たずに確定させると新旧混在のスナップショットになる。
-      void Promise.all(jobs)
-        .then(() => this.pollingInFlight.get(clusterKey))
-        .then(() => this.captureTopologySnapshot(clusterKey, epoch));
+      const sectionsDone = Promise.all(jobs).then(() => this.pollingInFlight.get(clusterKey));
+      void sectionsDone.then(() => this.captureTopologySnapshot(clusterKey, epoch));
+      // ヘルスとノードプール本体は初回描画の待ち条件に入れない: 進捗表示のセクションではないため、
+      // 揃うのを待つと進捗が全て済んだ後に理由の読めないスピナーが残る。
+      // ただし確定はセクション完了後に揃える(先に確定するとセクション欠けの図を出す)。
+      const backendHealths = this.reconcileBackendHealths(clusterKey, clusterId, compartmentId);
+      const nodePoolDetails = this.reconcileNodePoolDetails(clusterKey, clusterId, compartmentId);
+      void Promise.all([sectionsDone, backendHealths, nodePoolDetails]).then(() =>
+        this.captureTopologySnapshot(clusterKey, epoch),
+      );
     }
   }
 
@@ -1258,10 +1460,17 @@ export class OciClusterStore {
           const csi = getCsiSource(pv.spec);
           return resolvePvStorage(csi?.driver, csi?.volumeHandle);
         });
-        const refOcids = distinctFssRefOcids(resolutions);
-        const beforeExports = this.getCache(clusterKey);
-        const exportRefs = refOcids.filter(isFssExportOcid);
-        const startedExports = new Set(beforeExports.fssExports.keys());
+        // IP:pathでの照合が先。照合できたPVはexport getを叩かず、できなかったPVだけ先頭OCIDへ落とす。
+        const mountEntriesJob = needsFssMountEntries(resolutions)
+          ? this.ensureFssMountEntries(clusterKey, compartmentIdsPromise, compartmentId, force)
+          : undefined;
+        if (mountEntriesJob) jobs.push(mountEntriesJob);
+        const mountEntries: OciResult<OciFssMountIndex> = (await mountEntriesJob) ?? {
+          ok: true,
+          data: { entries: [], mountTargetIps: [] },
+        };
+        const exportRefs = fallbackFssExportOcids(resolutions, mountEntries);
+        const startedExports = new Set(this.getCache(clusterKey).fssExports.keys());
         const exportsToStart = force
           ? [...new Set([...startedExports, ...exportRefs])]
           : unstartedOcids(exportRefs, startedExports);
@@ -1271,7 +1480,10 @@ export class OciClusterStore {
         await Promise.all(fssExports);
 
         const cache = this.getCache(clusterKey);
-        const resolvedFsOcids = fileSystemOcidsOf(refOcids, this.toRecord(cache.fssExports));
+        const resolvedFsOcids = fssFileSystemIdsOf(resolutions, {
+          fssMountEntries: mountEntries,
+          fssExports: this.toRecord(cache.fssExports),
+        });
         const startedFileSystems = new Set(cache.fileSystems.keys());
         const toStart = force
           ? [...new Set([...startedFileSystems, ...resolvedFsOcids])]
@@ -1289,12 +1501,24 @@ export class OciClusterStore {
         );
         jobs.push(...fssPolicyJobs);
         const volumeIndex = policyNameIndex(await volumePolicies);
-        for (const volumeId of distinctBlockVolumeOcids(resolutions)) {
-          jobs.push(this.ensureVolumeBackupPolicy(clusterKey, volumeId, force, volumeIndex));
-        }
-        // スナップショットポリシーのMapエントリはFSS本体getの完了後に生える。
-        // 先にreconciledを立てると、そのMapが空のまま「揃った」と誤判定してポリシー名が後から生える。
-        await Promise.all(fssPolicyJobs);
+        const volumeJobs = distinctBlockVolumeOcids(resolutions).map((volumeId) =>
+          this.ensureVolumeBackupPolicy(clusterKey, volumeId, force, volumeIndex),
+        );
+        jobs.push(...volumeJobs);
+        // スナップショットポリシーと存在確認のMapエントリはFSS本体get・Volume追撃の完了後に生える。
+        // 先にreconciledを立てると、そのMapが空のまま「揃った」と誤判定して後から生える。
+        await Promise.all([...fssPolicyJobs, ...volumeJobs]);
+
+        const settled = this.getCache(clusterKey);
+        const probeOcids = existenceProbeOcids(resolutions, {
+          fssMountEntries: mountEntries,
+          fssExports: this.toRecord(settled.fssExports),
+          fileSystems: this.toRecord(settled.fileSystems),
+          volumeBackupPolicies: this.toRecord(settled.volumeBackupPolicies),
+        });
+        const searches = this.ensureResourceSearches(clusterKey, probeOcids, force);
+        jobs.push(...searches);
+        await Promise.all(searches);
         markReconciled({ ok: true, data: undefined });
       } catch (error) {
         const failure: OciResult<unknown> = { ok: false, kind: "internal", raw: { message: String(error) } };
@@ -1316,6 +1540,34 @@ export class OciClusterStore {
       (cache) => cache.availabilityDomains,
       (state) => this.updateCache(clusterKey, { availabilityDomains: state }),
       () => fetchAvailabilityDomains(compartmentId, this.ociCliCommand),
+      force,
+    );
+  }
+
+  private ensureFssMountEntries(
+    clusterKey: string,
+    compartmentIds: Promise<string[]>,
+    anchorCompartmentId: string,
+    force = false,
+  ): Promise<OciResult<OciFssMountIndex>> {
+    return this.ensureSectionValue(
+      clusterKey,
+      "fssMountEntries",
+      (cache) => cache.fssMountEntries,
+      (state) => this.updateCache(clusterKey, { fssMountEntries: state }),
+      async () => {
+        // AD一覧はスナップショットポリシー一覧と共有する。forceの再取得はそちらが担うため、ここでは取り直さない。
+        const [ids, domains] = await Promise.all([
+          compartmentIds,
+          this.ensureAvailabilityDomains(clusterKey, anchorCompartmentId),
+        ]);
+        if (!domains.ok) return domains;
+        return fetchFssMountEntries(
+          ids,
+          domains.data.map((domain) => domain.name),
+          this.ociCliCommand,
+        );
+      },
       force,
     );
   }
@@ -1390,6 +1642,34 @@ export class OciClusterStore {
       () => fetchFssSnapshotPolicyName(policyId, this.ociCliCommand, knownPolicyNames),
       force,
     );
+  }
+
+  private ensureResourceSearches(
+    clusterKey: string,
+    ocids: readonly string[],
+    force = false,
+  ): Promise<OciResult<OciResourceSummary | null>>[] {
+    const pending: string[] = [];
+    let release: (ids: readonly string[]) => void = () => undefined;
+    const batch = new Promise<readonly string[]>((resolve) => {
+      release = resolve;
+    }).then((ids) => (ids.length > 0 ? fetchResourceSearches(ids, this.ociCliCommand) : {}));
+    // fetcherはensureMapValueの中で同期的に呼ばれる。取得済み・取得中のOCIDはfetcherが呼ばれず束に入らない。
+    const jobs = ocids.map((ocid) =>
+      this.ensureMapValue(
+        clusterKey,
+        "resourceSearches",
+        ocid,
+        async (): Promise<OciResult<OciResourceSummary | null>> => {
+          pending.push(ocid);
+          const found = await batch;
+          return found[ocid] ?? { ok: false, kind: "internal", raw: { message: `no search result for ${ocid}` } };
+        },
+        force,
+      ),
+    );
+    release(pending);
+    return jobs;
   }
 
   private ensureFileSystem(clusterKey: string, fsId: string, force = false): Promise<OciResult<OciFileSystem>> {
@@ -1778,8 +2058,8 @@ export class OciClusterStore {
       const namespaceStore = Renderer.K8sApi.namespaceStore;
       await namespaceStore.loadAll();
       const names = namespaceStore.items.map((ns) => ns.getName());
-      await store.loadAll(names.length > 0 ? { namespaces: names } : undefined);
-      onDone?.();
+      const loaded = await store.loadAll(names.length > 0 ? { namespaces: names } : undefined);
+      if (loaded !== undefined) onDone?.();
     })();
     this.inFlight.set(key, promise);
     void promise.catch(() => undefined).finally(() => this.inFlight.delete(key));
@@ -1794,6 +2074,13 @@ export class OciClusterStore {
     if (this.getCache(clusterKey).serviceNamespacesLoaded) return Promise.resolve();
     return this.loadAllNamespaces(clusterKey, "serviceNamespaces", Renderer.K8sApi.serviceStore, () =>
       this.updateCache(clusterKey, { serviceNamespacesLoaded: true }),
+    );
+  }
+
+  private ensureEndpointSliceNamespaces(clusterKey: string): Promise<void> {
+    if (this.getCache(clusterKey).endpointSliceNamespacesLoaded) return Promise.resolve();
+    return this.loadAllNamespaces(clusterKey, "endpointSliceNamespaces", Renderer.K8sApi.endpointSliceStore, () =>
+      this.updateCache(clusterKey, { endpointSliceNamespacesLoaded: true }),
     );
   }
 }

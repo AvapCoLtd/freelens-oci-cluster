@@ -43,3 +43,9 @@ export interface SearchInputProps {
   onClear?: () => void;
 }
 export const SearchInput = Renderer.Component.SearchInput as unknown as React.ComponentType<SearchInputProps>;
+
+export type ShowNotification = (
+  message: React.ReactNode,
+  opts?: { id?: string | number; timeout?: number },
+) => () => void;
+export const Notifications = Renderer.Component.Notifications as unknown as { error: ShowNotification };

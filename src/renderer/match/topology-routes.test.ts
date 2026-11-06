@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { type TopologyFlow, toTopologyFlow } from "./topology-flow";
-import type { TopologyEdge, TopologyGraph, TopologyNode, TopologyNodeKind } from "./topology-graph";
+import type { TopologyEdge, TopologyGraph, TopologyNode } from "./topology-graph";
 import { layoutTopology, type TopologyPoint } from "./topology-layout";
+import type { TopologyNodeKind } from "./topology-order";
 import { type RouteEdge, type RouteNode, routeTopologyEdges } from "./topology-routes";
 
 const VCN = "ocid1.vcn.oc1.ap-tokyo-1.vcn1";

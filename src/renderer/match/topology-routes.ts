@@ -1,4 +1,6 @@
+import { pushToMap } from "./map-list";
 import type { TopologyPoint } from "./topology-layout";
+import { compareText } from "./topology-order";
 
 export type TopologySide = "top" | "right" | "bottom" | "left";
 
@@ -180,17 +182,6 @@ function heapPop(heap: Heap): number {
   return top;
 }
 
-function pushEntry(map: Map<string, string[]>, key: string, value: string): void {
-  const list = map.get(key);
-  if (list) list.push(value);
-  else map.set(key, [value]);
-}
-
-function compareId(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
-
 /** 直交折れ線から一直線に並ぶ中間点を落とす。 */
 function simplify(points: readonly TopologyPoint[]): TopologyPoint[] {
   const out: TopologyPoint[] = [];
@@ -223,13 +214,13 @@ export function routeTopologyEdges(
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const ordered = edges
     .filter((edge) => nodeById.has(edge.source) && nodeById.has(edge.target) && edge.source !== edge.target)
-    .sort((a, b) => compareId(a.id, b.id));
+    .sort((a, b) => compareText(a.id, b.id));
   if (ordered.length === 0) return routes;
 
   const slots = new Map<string, string[]>();
   for (const edge of ordered) {
-    pushEntry(slots, `${edge.source}|${edge.sourceSide}`, edge.id);
-    pushEntry(slots, `${edge.target}|${edge.targetSide}`, edge.id);
+    pushToMap(slots, `${edge.source}|${edge.sourceSide}`, edge.id);
+    pushToMap(slots, `${edge.target}|${edge.targetSide}`, edge.id);
   }
   /** 同じ辺に集まるエッジを辺上へ等間隔に散らす。1点に束ねると根元が1本に見える。 */
   const portOf = (nodeId: string, side: TopologySide, edgeId: string): TopologyPoint => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { TopologyEdge, TopologyNode, TopologyNodeKind } from "./topology-graph";
+import type { TopologyEdge, TopologyNode } from "./topology-graph";
 import { layoutTopology, type TopologyLayoutNode, UNPLACED_REGION_ID } from "./topology-layout";
+import type { TopologyNodeKind } from "./topology-order";
 
 function node(id: string, kind: TopologyNodeKind, parentId?: string): TopologyNode {
   return { id, kind, label: id, parentId, detail: [] };

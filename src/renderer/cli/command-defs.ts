@@ -8,16 +8,19 @@ import type {
   OciFileSystem,
   OciFilesystemSnapshotPolicy,
   OciFssExport,
+  OciFssExportSummary,
   OciInstance,
   OciInternetGateway,
   OciLoadBalancer,
   OciLocalPeeringGateway,
   OciManagedCertificate,
+  OciMountTarget,
   OciNetworkLoadBalancerSummary,
   OciNodePool,
   OciNodePoolSummary,
   OciNsg,
   OciNsgRule,
+  OciPrivateIp,
   OciResourceSummary,
   OciRouteTable,
   OciSecurityList,
@@ -129,6 +132,20 @@ export const ociCommands = {
     decode: (parsed) => parsed as OciResourceSummary[],
   }),
 
+  // 複数OCIDをOR結合して1回で引ける。ヒットしないOCIDは結果に出ない。
+  resourceSearchByIds: define<{ resourceIds: readonly string[] }, OciResourceSummary[]>({
+    args: ({ resourceIds }) => [
+      "search",
+      "resource",
+      "structured-search",
+      "--query-text",
+      `query all resources where ${resourceIds.map((id) => `identifier = '${id}'`).join(" || ")}`,
+    ],
+    output: "collection",
+    manualPaging: true,
+    decode: (parsed) => parsed as OciResourceSummary[],
+  }),
+
   nlbList: listAll<{ compartmentId: string }, OciNetworkLoadBalancerSummary>(
     ["nlb", "network-load-balancer", "list"],
     ({ compartmentId }) => ["--compartment-id", compartmentId],
@@ -157,6 +174,28 @@ export const ociCommands = {
   fssExportGet: getOne<{ exportId: string }, OciFssExport>(["fs", "export", "get"], ({ exportId }) => [
     "--export-id",
     exportId,
+  ]),
+
+  // `fs`系listの中でexportだけは`--availability-domain`を取らない(compartment単位)。
+  fssExportList: listAll<{ compartmentId: string }, OciFssExportSummary>(
+    ["fs", "export", "list"],
+    ({ compartmentId }) => ["--compartment-id", compartmentId],
+  ),
+
+  mountTargetList: listAll<{ compartmentId: string; availabilityDomain: string }, OciMountTarget>(
+    ["fs", "mount-target", "list"],
+    ({ compartmentId, availabilityDomain }) => [
+      "--compartment-id",
+      compartmentId,
+      "--availability-domain",
+      availabilityDomain,
+    ],
+  ),
+
+  // mount targetの応答はprivate IPのOCIDしか持たないため、IPアドレスはここで引く。
+  privateIpGet: getOne<{ privateIpId: string }, OciPrivateIp>(["network", "private-ip", "get"], ({ privateIpId }) => [
+    "--private-ip-id",
+    privateIpId,
   ]),
 
   nodePoolList: listAll<{ compartmentId: string; clusterId: string }, OciNodePoolSummary>(

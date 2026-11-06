@@ -1,12 +1,25 @@
-import { EDGE_KIND_COLOR, EDGE_KIND_LABEL, missingKindLabel, NODE_KIND_LABEL } from "./topology-flow";
+import { EDGE_HEALTH_LEVELS } from "./backend-health";
+import { pushToMap } from "./map-list";
+import {
+  EDGE_HEALTH_COLOR,
+  EDGE_HEALTH_DASH,
+  EDGE_HEALTH_LABEL,
+  EDGE_KIND_COLOR,
+  EDGE_KIND_DASH,
+  EDGE_KIND_LABEL,
+  MERMAID_DASH_EXCLUDED,
+  missingKindLabel,
+  NODE_KIND_LABEL,
+} from "./topology-flow";
 import {
   TOPOLOGY_EDGE_KINDS,
+  type TopologyEdgeHealth,
   type TopologyEdgeKind,
   type TopologyGraph,
   type TopologyNode,
-  type TopologyNodeKind,
   type TopologyNodeStatus,
 } from "./topology-graph";
+import type { TopologyNodeKind } from "./topology-order";
 
 const HEADER = "flowchart TB";
 const INDENT = "  ";
@@ -73,9 +86,7 @@ export function toMermaid(graph: TopologyGraph, meta?: TopologyMermaidMeta): str
       roots.push(node);
       continue;
     }
-    const siblings = childrenOf.get(parentId);
-    if (siblings) siblings.push(node);
-    else childrenOf.set(parentId, [node]);
+    pushToMap(childrenOf, parentId, node);
   }
 
   const lines: string[] = [];
@@ -113,18 +124,28 @@ export function toMermaid(graph: TopologyGraph, meta?: TopologyMermaidMeta): str
 
   const edgeLinesStart = lines.length;
   const linkIndexesByKind = new Map<TopologyEdgeKind, number[]>();
+  const linkIndexesByHealth = new Map<TopologyEdgeHealth, number[]>();
   for (const edge of graph.edges) {
     const source = idOf.get(edge.source);
     const target = idOf.get(edge.target);
     if (!source || !target) continue;
-    const indexes = linkIndexesByKind.get(edge.kind);
     const index = lines.length - edgeLinesStart;
-    if (indexes) indexes.push(index);
-    else linkIndexesByKind.set(edge.kind, [index]);
-    lines.push(`${INDENT}${source} -->|${EDGE_KIND_LABEL[edge.kind]}| ${target}`);
+    // health色で塗る分を種別色から外す: 同じlinkへ2本のlinkStyleを出すと後勝ちに依存する。
+    if (edge.health) pushToMap(linkIndexesByHealth, edge.health, index);
+    else pushToMap(linkIndexesByKind, edge.kind, index);
+    lines.push(`${INDENT}${source} -->|${edge.label ?? EDGE_KIND_LABEL[edge.kind]}| ${target}`);
   }
   for (const [kind, indexes] of linkIndexesByKind) {
-    lines.push(`${INDENT}linkStyle ${indexes.join(",")} stroke:${EDGE_KIND_COLOR[kind]}`);
+    const dash = MERMAID_DASH_EXCLUDED.has(kind) ? undefined : EDGE_KIND_DASH[kind];
+    const style = dash === undefined ? "" : `,stroke-dasharray:${dash}`;
+    lines.push(`${INDENT}linkStyle ${indexes.join(",")} stroke:${EDGE_KIND_COLOR[kind]}${style}`);
+  }
+  for (const health of EDGE_HEALTH_LEVELS) {
+    const indexes = linkIndexesByHealth.get(health);
+    if (!indexes) continue;
+    const dash = EDGE_HEALTH_DASH[health];
+    const style = dash === undefined ? "" : `,stroke-dasharray:${dash}`;
+    lines.push(`${INDENT}linkStyle ${indexes.join(",")} stroke:${EDGE_HEALTH_COLOR[health]}${style}`);
   }
 
   const idsByStatus = new Map<TopologyNodeStatus, string[]>();
@@ -132,9 +153,7 @@ export function toMermaid(graph: TopologyGraph, meta?: TopologyMermaidMeta): str
     const status = node.status;
     const id = idOf.get(node.id);
     if (!status || !id || !STATUS_STYLE[status]) continue;
-    const ids = idsByStatus.get(status);
-    if (ids) ids.push(id);
-    else idsByStatus.set(status, [id]);
+    pushToMap(idsByStatus, status, id);
   }
   if (idsByStatus.size > 0) {
     for (const status of STATUS_ORDER) {
@@ -152,6 +171,9 @@ export function toMermaid(graph: TopologyGraph, meta?: TopologyMermaidMeta): str
   const legend: string[] = [];
   for (const kind of TOPOLOGY_EDGE_KINDS) {
     if (linkIndexesByKind.has(kind)) legend.push(`${EDGE_KIND_LABEL[kind]} : ${EDGE_KIND_COLOR[kind]}`);
+  }
+  for (const health of EDGE_HEALTH_LEVELS) {
+    if (linkIndexesByHealth.has(health)) legend.push(`${EDGE_HEALTH_LABEL[health]} : ${EDGE_HEALTH_COLOR[health]}`);
   }
   for (const status of STATUS_ORDER) {
     const meaning = STATUS_LEGEND[status];

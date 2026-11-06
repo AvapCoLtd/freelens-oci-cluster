@@ -1,12 +1,14 @@
 import { Renderer } from "@freelensapp/extensions";
 import { observer } from "mobx-react";
 import type { ClusterOciData } from "../fetch/fetch";
+import { type ClusterTagMismatch, clusterTagMismatchesOf, clusterTagMismatchText } from "../match/cluster-tag";
 import { filterRows } from "../match/filter-rows";
 import { lbKindLabel } from "../match/network-labels";
 import { sectionsReady } from "../match/section-ready";
 import type { LoadBalancerCandidate, ServiceLbMatchInput } from "../match/service-lb";
 import { matchServicesToLoadBalancers } from "../match/service-lb";
 import { sortRows } from "../match/sort-rows";
+import { ClusterTagNotes } from "./cluster-tag-notes";
 import { ConsoleButton } from "./console-button";
 import { EmptyState } from "./empty-state";
 import { SectionError } from "./error-guidance";
@@ -23,18 +25,29 @@ interface LbInfo {
   displayName?: string;
   lifecycleState?: string;
   kind: "nlb" | "lb";
+  tagMismatches: ClusterTagMismatch[];
 }
 
-function buildLbInfo(data: ClusterOciData): Map<string, LbInfo> {
+function buildLbInfo(data: ClusterOciData, clusterId: string): Map<string, LbInfo> {
   const info = new Map<string, LbInfo>();
   if (data.nlbs.ok) {
     for (const nlb of data.nlbs.data) {
-      info.set(nlb.id, { displayName: nlb["display-name"], lifecycleState: nlb["lifecycle-state"], kind: "nlb" });
+      info.set(nlb.id, {
+        displayName: nlb["display-name"],
+        lifecycleState: nlb["lifecycle-state"],
+        kind: "nlb",
+        tagMismatches: clusterTagMismatchesOf(nlb, clusterId),
+      });
     }
   }
   if (data.lbs.ok) {
     for (const lb of data.lbs.data) {
-      info.set(lb.id, { displayName: lb["display-name"], lifecycleState: lb["lifecycle-state"], kind: "lb" });
+      info.set(lb.id, {
+        displayName: lb["display-name"],
+        lifecycleState: lb["lifecycle-state"],
+        kind: "lb",
+        tagMismatches: clusterTagMismatchesOf(lb, clusterId),
+      });
     }
   }
   return info;
@@ -108,6 +121,7 @@ function searchValues(row: ServiceLbRow): (string | number | undefined)[] {
   return [
     row.serviceLabel,
     row.lbInfo?.displayName,
+    ...(row.lbInfo?.tagMismatches ?? []).map(clusterTagMismatchText),
     lbKindLabel(row.consoleType),
     row.matchedIp,
     row.trafficPolicy,
@@ -120,9 +134,10 @@ export interface ServiceLbTabProps {
   data: ClusterOciData;
   region: string | undefined;
   search: SearchState;
+  clusterId: string;
 }
 
-export const ServiceLbTab = observer(function ServiceLbTab({ data, region, search }: ServiceLbTabProps) {
+export const ServiceLbTab = observer(function ServiceLbTab({ data, region, search, clusterId }: ServiceLbTabProps) {
   const serviceStore = Renderer.K8sApi.serviceStore;
   const [sort, toggleSort] = useColumnSort<ServiceLbColumn>("service");
   const { query, setQuery } = search;
@@ -137,7 +152,7 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region, searc
   }
 
   const matches = matchServicesToLoadBalancers(serviceInputs, buildCandidates(data));
-  const lbInfoByOcid = buildLbInfo(data);
+  const lbInfoByOcid = buildLbInfo(data, clusterId);
 
   const rows: ServiceLbRow[] = matches.map((match) => {
     const key = `${match.service.namespace}/${match.service.name}`;
@@ -218,7 +233,10 @@ export const ServiceLbTab = observer(function ServiceLbTab({ data, region, searc
               return (
                 <tr key={row.key}>
                   <td style={TD_STYLE}>{row.serviceLabel}</td>
-                  <td style={TD_STYLE}>{row.lbInfo?.displayName ?? "-"}</td>
+                  <td style={TD_STYLE}>
+                    {row.lbInfo?.displayName ?? "-"}
+                    <ClusterTagNotes mismatches={row.lbInfo?.tagMismatches ?? []} />
+                  </td>
                   <td style={TD_STYLE}>{lbKindLabel(row.consoleType)}</td>
                   <td style={TD_STYLE}>{row.matchedIp ?? "-"}</td>
                   <td style={TD_STYLE}>{row.trafficPolicy ?? "-"}</td>

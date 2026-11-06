@@ -6,7 +6,9 @@ export function OciNodesPage() {
   return (
     <OciPageShell
       page="nodes"
-      renderLoaded={(data, region, _clusterKey, search) => <NodeTab data={data} region={region} search={search} />}
+      renderLoaded={(data, region, _clusterKey, search, clusterId) => (
+        <NodeTab data={data} region={region} search={search} clusterId={clusterId} />
+      )}
     />
   );
 }
